@@ -15,7 +15,6 @@ import { resumeAudio, routeElement } from "./audio.js";
 import { chunkIndex, chunkStart, OVERLAP_SAMPLES, RATE } from "./grid.js";
 import { t } from "./i18n.js";
 import { PlaybackIntent } from "./playback-intent.js";
-import { settings } from "./settings.js";
 
 const AHEAD = 6; // chunks kept ready ahead of the playhead
 const BEHIND = 2;
@@ -83,10 +82,11 @@ let stretcher = null;
 const loadStretcher = () => (stretcher ??= import("./stretch.js").then((module) => module.stretch));
 
 export class Session {
-  constructor(video, { capture, engine, onChange = () => {} }) {
+  constructor(video, { capture, engine, settings, onChange = () => {} }) {
     this.video = video;
     this.capture = capture;
     this.engine = engine;
+    this.settings = settings;
     this.onChange = onChange;
     this.on = false; // Musicless wanted for the current source
     this.failure = null; // { reason, message } while failed closed
@@ -158,7 +158,7 @@ export class Session {
   // ---- what the button calls -------------------------------------------------
 
   toggle() {
-    if (!settings.consented) return; // the button opens the welcome page instead
+    if (!this.settings.consented) return; // the button opens the welcome page instead
     if (this.status === "blocked") {
       resumeAudio(); // the click itself lets the page play sound again
       this.blockedClick ??= performance.now();
@@ -208,7 +208,7 @@ export class Session {
   // The user turned Musicless on, or off again (the welcome page, the popup).
   consentChanged() {
     this.failure = null;
-    if (settings.consented) {
+    if (this.settings.consented) {
       if (this.on && this.sourceUrl) this.startSource();
     } else {
       this.stopProcessing();
@@ -241,7 +241,7 @@ export class Session {
       this.failure = null; // a failure belonged to the previous source
       this.stats.firstAudioMs = null;
       // Player choices belong to one video; each new source uses the default.
-      if (url) this.on = settings.autoStart;
+      if (url) this.on = this.settings.autoStart;
       if (this.on && url) this.startSource();
       else if (this.graph && !this.on) this.graph.original.gain.value = 1;
     } else if (this.on && !this.failure && !this.streamId && url) {
@@ -258,7 +258,7 @@ export class Session {
     this.engineLosses = 0;
     const url = this.sourceUrl;
     this.stats.started = performance.now();
-    if (!url || !settings.consented) return; // nothing loaded yet, or nothing may be read yet
+    if (!url || !this.settings.consented) return; // nothing loaded yet, or nothing may be read yet
     if (!url.startsWith("blob:")) {
       // A plain file or a media object: nothing was captured, and routing a
       // cross-origin file through Web Audio could silence it for good. Hold it instead.
@@ -377,7 +377,7 @@ export class Session {
   }
 
   fail(reason, detail) {
-    if (!this.on || !settings.consented || this.failure || this.disposed) return;
+    if (!this.on || !this.settings.consented || this.failure || this.disposed) return;
     this.failure = { reason, message: FAILURES[reason] ?? FAILURES.error, detail: detail ?? null };
     this.stopProcessing();
     if (this.graph) this.graph.original.gain.value = 0;
@@ -577,9 +577,9 @@ export class Session {
 
   tick() {
     if (this.disposed) return;
-    if (this.on && settings.consented && !this.failure && !chrome.runtime?.id) this.fail("updated");
-    if (!this.on || !settings.consented || this.failure) {
-      if ((!this.on || !settings.consented) && this.intent.held) this.intent.release();
+    if (this.on && this.settings.consented && !this.failure && !chrome.runtime?.id) this.fail("updated");
+    if (!this.on || !this.settings.consented || this.failure) {
+      if ((!this.on || !this.settings.consented) && this.intent.held) this.intent.release();
       this.update();
       return;
     }
@@ -715,7 +715,7 @@ export class Session {
   // ---- state for the button ---------------------------------------------------
 
   computeStatus() {
-    if (!settings.consented) return "setup";
+    if (!this.settings.consented) return "setup";
     if (!this.on) return "off";
     if (this.failure) return "failed";
     const ctx = this.graph?.ctx;

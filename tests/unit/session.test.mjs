@@ -65,7 +65,8 @@ function sessionSandbox({ video: props, settings = {}, streams = { "blob:a": 1 }
     t: (key) => key, // i18n.js: failure messages by key
     importStretch: async () => ({ stretch }),
   };
-  const { Session } = load("session.js", env, {
+  const { settings: preferences, ...globals } = env;
+  const { Session } = load("session.js", globals, {
     rewrite: (source) => source.replace('import("./stretch.js")', "importStretch()"),
   });
   const capture = {
@@ -90,7 +91,7 @@ function sessionSandbox({ video: props, settings = {}, streams = { "blob:a": 1 }
     deliver(message) { this.sessions.get(message.streamId)?.onEngine(message); },
   };
   const video = new Video(props);
-  const session = new Session(video, { capture, engine });
+  const session = new Session(video, { capture, engine, settings: preferences });
   return {
     session, video, capture, engine, ctx, graph, env, started, reloads,
     advance(ms) { now += ms; },

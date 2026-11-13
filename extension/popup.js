@@ -1,6 +1,6 @@
 // Toolbar popup: one-time consent, then the default for every video the user opens.
 import { localizePage, localizeWithGlyph, t } from "./i18n.js";
-import { DEFAULTS } from "./settings.js";
+import { loadSettings } from "./settings.js";
 
 const $ = (id) => document.getElementById(id);
 localizePage();
@@ -27,11 +27,12 @@ function hint() {
 }
 
 // `consented` stays false until the user turns Musicless on, here or on the first-run page.
-chrome.storage.sync.get(DEFAULTS).then((stored) => {
+function render(stored) {
   $("autoStart").checked = stored.autoStart;
   hint();
   show(stored.consented);
-});
+}
+loadSettings().then(render);
 $("accept").addEventListener("click", async () => {
   await chrome.storage.sync.set({ consented: true });
   $("done").hidden = false;

@@ -1,6 +1,7 @@
 // First-run page: the disclosure and the one choice that turns Musicless on,
 // then what to expect, where the control is, and the one thing left to do.
 import { localizePage, localizeWithGlyph, t } from "./i18n.js";
+import { loadSettings, onSettingsChanged } from "./settings.js";
 
 const $ = (id) => document.getElementById(id);
 localizePage();
@@ -30,10 +31,12 @@ function show(consented) {
   if (celebrate) $("doneHeading").focus();
 }
 
-chrome.storage.sync.get({ consented: false, autoStart: true }).then(({ consented, autoStart }) => {
+function render({ consented, autoStart }) {
   hint(autoStart);
   show(consented);
-});
+}
+onSettingsChanged(render);
+loadSettings().then(render);
 $("accept").addEventListener("click", async () => {
   await chrome.storage.sync.set({ consented: true });
   show(true);
@@ -51,10 +54,8 @@ function offerBack(tab) {
 chrome.storage.session.get("videoTab").then(({ videoTab: tab }) => {
   if (Number.isInteger(tab?.id)) chrome.tabs.get(tab.id).then(() => offerBack(tab), () => offerBack(null));
 });
-// Turned on in the popup meanwhile; or another video's button asked.
+// Another video's button may request this same setup page.
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "sync" && "consented" in changes) show(changes.consented.newValue === true);
-  if (area === "sync" && "autoStart" in changes) hint(changes.autoStart.newValue !== false);
   if (area === "session" && "videoTab" in changes) offerBack(changes.videoTab.newValue);
 });
 $("back").addEventListener("click", async () => {

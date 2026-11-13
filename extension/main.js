@@ -79,6 +79,7 @@ function attach(video) {
   controller.session = new Session(video, {
     capture,
     engine,
+    settings,
     onChange: (session) => {
       controller.session = session;
       render(controller);
