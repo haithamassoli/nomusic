@@ -1,0 +1,7 @@
+{
+  "spleeter_url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/source-separation-models/sherpa-onnx-spleeter-2stems.tar.bz2",
+  "spleeter_sha256": "e26401d9c1801f43c0229731d78d32c2e80085e3aceedeb25f29d2de5fa68ca2",
+  "ort_version": "1.30.0",
+  "ort_sha256": "d2228df7e4616bc3348bf504ee888f3bec43789a273f0a63f3e68d203ce3bf71",
+  "model_sha256": "3dc5eaf764fc3c12daa4b69a295be426eb0870dbd400afe09c18d0f66e3a50de"
+}

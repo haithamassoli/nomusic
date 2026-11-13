@@ -1,0 +1,3 @@
+# These versions produce the model hash in dependencies.json: do not float them.
+onnx==1.23.2
+numpy==2.5.4

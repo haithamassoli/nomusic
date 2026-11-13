@@ -3,9 +3,8 @@
 # to upload to a browser's add-on store or to share for "Load unpacked".
 # Run ./setup.sh first: the model and the runtime are built, not committed.
 # The zip holds the files git tracks in extension/ plus the built files,
-# so nothing else in the folder can slip in; the test-only recorder
-# (recorder.js) is left out. It is reproducible: sorted entries with fixed
-# timestamps.
+# so nothing else in the folder can slip in. Test diagnostics live under
+# tests/. Sorted entries and fixed timestamps make the archive reproducible.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -13,7 +12,7 @@ cd "$(dirname "$0")/.."
 npm run build
 
 python3 - <<'PY'
-import hashlib, json, os, re, subprocess, sys, zipfile
+import hashlib, json, os, subprocess, sys, zipfile
 
 BUILT = ["content.bundle.js", "model/spleeter-2stems.onnx", "vendor/ort.wasm.min.mjs",
          "vendor/ort-wasm-simd-threaded.mjs", "vendor/ort-wasm-simd-threaded.wasm"]
@@ -22,13 +21,12 @@ for name in BUILT:
         sys.exit(f"Missing extension/{name}: run ./setup.sh first.")
 tracked = subprocess.run(["git", "ls-files", "-z", "extension"], check=True, capture_output=True, text=True).stdout
 files = sorted({os.path.relpath(path, "extension") for path in tracked.split("\0") if path} | set(BUILT))
-files = [name for name in files if name != "recorder.js"]
 
 # Only the tested build goes out: the model setup.sh builds, and no test key.
 manifest = json.load(open("extension/manifest.json"))
 if "musicless_test" in manifest:
     sys.exit("extension/manifest.json has the test harness's musicless_test key.")
-expected = re.search(r"^MODEL_SHA256=(\w+)$", open("setup.sh").read(), re.M).group(1)
+expected = json.load(open("tools/dependencies.json"))["model_sha256"]
 model = hashlib.sha256(open("extension/model/spleeter-2stems.onnx", "rb").read()).hexdigest()
 if model != expected:
     sys.exit(f"extension/model/spleeter-2stems.onnx is not the model setup.sh builds (sha256 {model}).")

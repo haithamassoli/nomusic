@@ -5,6 +5,7 @@ import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import puppeteer from "puppeteer-core";
 import { buildContent } from "../tools/build-content.mjs";
+import { instrumentExtension } from "./diagnostics/instrument.mjs";
 
 const TESTS = new URL(".", import.meta.url).pathname;
 export const WORK = process.env.MUSICLESS_TEST_DIR ?? join(TESTS, ".work");
@@ -14,36 +15,6 @@ const ANALYZE = join(TESTS, "analyze.py");
 export const PYTHON = process.env.MUSICLESS_PYTHON ?? join(TESTS, ".venv", "bin", "python");
 const NS = "musicless";
 mkdirSync(WORK, { recursive: true });
-
-// What the page-world capture keeps, for the tests (the release has no way to
-// read it). `media` counts kept audio other than format headers.
-const CAPTURE_DEBUG = `window.__musiclessCaptureDebug = () => [...streams].map(([id, s]) => ({ id, url: s.url,
-  buffers: [...s.buffers.values()], bytes: s.bytes, stored: s.log.length, subscribed: s.subscribed, dropped: !!s.dropped,
-  missed: !!s.missed, media: s.log.reduce((sum, e) => sum + (e.kind === "append" && !e.header ? e.bytes.length : 0), 0), consented }));\n`;
-
-// The test copy's requests for state and recordings (main.js). The recorder
-// taps each routed session's audio; the release has neither.
-const MAIN_DEBUG = `
-// (test copy) state, sessions and recordings on request
-const startSourceForTests = Session.prototype.startSource;
-Session.prototype.startSource = function () {
-  startSourceForTests.call(this);
-  if (!this.graph || this.recorder) return;
-  import("./recorder.js").then(({ Recorder }) => {
-    if (!this.recorder && !this.disposed) this.recorder = new Recorder(this.graph.ctx, this.graph.element, this.graph.output, this.video);
-  });
-};
-window.addEventListener("message", (event) => {
-  if (event.source !== window || event.data?.musicless !== "debug") return;
-  const sessions = [...controllers.values()].map((controller) => controller.session);
-  const session = sessions.find((s) => s.attached) ?? sessions.find((s) => s.on) ?? sessions[0];
-  let reply = null;
-  if (event.data.type === "dump") reply = session?.recorder?.dump(event.data.seconds ?? 20) ?? null;
-  else if (event.data.type === "state") reply = session ? session.snapshot() : null;
-  else if (event.data.type === "sessions") reply = sessions.map((s) => s.snapshot());
-  window.postMessage({ musicless: "debug-reply", id: event.data.id, reply }, "*");
-});
-`;
 
 // The shipped manifest only matches YouTube; tests also allow the local server.
 // The test copy also turns on Musicless's diagnostics (state and recordings, which
@@ -56,19 +27,7 @@ function testExtension({ diagnostics = true } = {}) {
   cpSync(EXTENSION, dir, { recursive: true, dereference: true }); // worktrees may link the built model and runtime
   const manifest = JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8"));
   if (diagnostics) {
-    if (!existsSync(join(dir, "recorder.js"))) cpSync(new URL("../extension/recorder.js", import.meta.url), join(dir, "recorder.js"));
-    const capture = readFileSync(join(dir, "capture.js"), "utf8");
-    const inspected = capture.replace(/^( *const streams = new Map\(\);.*\n)/m, `$1${CAPTURE_DEBUG}`)
-      .replace(/^( *function trim\(stream, limit\) \{\n)/m, "$1    stream.dropped = true; // (test copy) older audio was let go\n");
-    if (!inspected.includes(CAPTURE_DEBUG) || !inspected.includes("(test copy)")) {
-      throw new Error("capture.js no longer declares `const streams = new Map();` or `function trim(stream, limit) {`: update the harness");
-    }
-    writeFileSync(join(dir, "capture.js"), inspected);
-    const main = readFileSync(join(dir, "main.js"), "utf8");
-    if (!/^import \{[^}]*\bSession\b[^}]*\} from "\.\/session\.js";$/m.test(main) || !main.includes("const controllers = new Map();")) {
-      throw new Error("main.js no longer imports Session or declares `const controllers = new Map();`: update the harness");
-    }
-    writeFileSync(join(dir, "main.js"), main + MAIN_DEBUG);
+    instrumentExtension(dir);
     manifest.musicless_test = true;
     buildContent(dir);
   }
