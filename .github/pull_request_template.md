@@ -3,7 +3,7 @@
 ## How you tested
 
 - [ ] Unit tests (`cd tests && npm run unit`)
-- [ ] Browser, if you touched playback, capture, or the button (`QUICK=1 node local.mjs`, or say what you watched instead)
+- [ ] Relevant browser checks from the [test selection guide](https://github.com/ieasybooks/musicless/blob/main/docs/testing.md#choosing-checks); include the results and any failures.
 - [ ] Not tested, because:
 
 ## UI

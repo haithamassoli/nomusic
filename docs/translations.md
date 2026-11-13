@@ -1,10 +1,11 @@
 # Translations
 
-Every user-visible string of the extension lives in `extension/_locales/en/messages.json`
+The extension's controls and setup messages live in `extension/_locales/en/messages.json`
 (English, the default) and `extension/_locales/ar/messages.json` (Arabic). Chrome picks the
 language from the browser's UI language and falls back to English per message. This table
 is for review by a native speaker; the Arabic is Modern Standard Arabic, plain and short.
 `tests/unit/translations.test.mjs` checks that the table matches both catalogs.
+The bundled privacy policy has its own English and Arabic text in `extension/privacy.html`.
 
 Arabic activation labels (`control_setup`, `consent_accept`, `done_heading`) remain drafts awaiting native review.
 

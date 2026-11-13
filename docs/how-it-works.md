@@ -28,10 +28,31 @@ video plays, and plays them in place of the original track.
 | `engine.js` | The page's connection to the hidden frame; routes messages by stream; notices a frame or worker that has gone away and starts a new one; removes the frame 30 s after nothing uses it. |
 | `separator.html/js` | The hidden frame, in the extension's own origin (WebAssembly allowed, out of the page's reach). It accepts one connection, and only with a random token that page scripts cannot read: the background service worker makes it once, and the content script sends it only to the extension's own origin, fixed when the frame is created. Then it starts the tab worker and connects it to the shared model. |
 | `tab-worker.js` | Per tab: demuxes (`demux.js`), decodes with WebCodecs, resamples to 44.1 kHz, computes the STFT (`dsp.js`), sends it to the model, synthesizes the voices and crossfades the window edges. Keeps at most 64 MiB of audio per video, nothing more than 15 minutes behind or ahead of the playhead, and separates again whatever the player replaced. |
+| `model-client.js` | Per-tab connection to the shared model: readiness, request IDs, deadlines and heartbeat. Reports failures back to the tab worker without depending on its stream or scheduling state. |
 | `model-worker.js`, `model.js` | One copy of the model for every tab (a shared worker; WebCodecs is not available there, which is why decoding stays per tab). A priority queue puts the chunk a playing video needs first. |
+| `failures.js`, `navigation.js` | Failure messages and recovery actions in one policy; position-preserving page reloads shared by recovery and Back to the video. |
+| `player-glyph.js` | Geometry shared by the player button and the static glyph generator in `tools/icons.mjs`. |
 | `grid.js` | The model's numbers and the fixed window grid, shared by both sides (`tests/reference.py` mirrors them). |
 | `stretch.js`, `third_party/soundtouch` | Pitch-preserving time-stretch for speeds other than 1x. |
 | `popup.*`, `welcome.*`, `background.js`, `settings.js` | The toolbar popup, the first-run page, and the stored values: the automatic-removal setting and whether the user chose **Turn on Musicless** (`chrome.storage.sync`), the frame's token (`chrome.storage.local`), and the tab/frame/document identifiers for **Back to the video**, cleared on return or browser-session end (`chrome.storage.session`). |
+
+## Where to make a change
+
+| Behavior | Owner and boundary |
+| --- | --- |
+| Keep or reject encoded page audio | `capture.js` owns capture; `capture-bus.js` validates its untrusted messages. Worker parsing starts in `demux.js`. |
+| Play, pause, seek or change speed | `session.js` owns the video lifecycle; `playback-intent.js` distinguishes the user's choice from a processing hold. |
+| Choose recovery actions or messages | Add the reason's policy in `failures.js`; Session executes its action and Button renders it. Catalog wording remains in `_locales/`. |
+| Read settings or react to consent | `settings.js` starts its storage mirror on `loadSettings()`. `main.js` passes that mirror into each Session. Defaults apply to each new source. |
+| Change worker availability handling | `engine.js` owns the page/frame connection; `model-client.js` owns the tab/shared-worker connection. Their timeouts cover different boundaries. |
+| Change the separation | `grid.js`, `dsp.js`, `model.js` and `tools/build_model.py`, checked independently against `tests/reference.py` and fixed quality floors. |
+| Change build inputs | `tools/dependencies.json` holds verified download/model pins; `tools/model-requirements.txt` constrains both the model build and test NumPy. |
+| Add test recording or introspection | `tests/diagnostics/`; the harness instruments a disposable extension copy. Nothing there is packaged. |
+
+Keep page-world capture separate from privileged extension code. The classic
+content bundle and worker modules have different loading and security rules.
+Use the [test selection guide](testing.md#choosing-checks) to check the boundary
+you changed.
 
 ## Separation
 
@@ -191,6 +212,6 @@ token above).
 
 The extension makes no network requests, has no remote code, and asks for one
 permission (`storage`) plus access to YouTube's pages. The release cannot
-record or export audio: the test harness adds the recorder (`recorder.js`,
-which is not in the release zip) and its diagnostics to its own copy of the
-extension, with a key in that copy's manifest.
+record or export audio. The test harness adds the recorder and state hooks
+from `tests/diagnostics/` only to its own copy of the extension, with a key
+in that copy's manifest.

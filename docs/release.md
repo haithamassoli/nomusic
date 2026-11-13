@@ -11,23 +11,26 @@ you built on a laptop if it differs.
 On Linux, before the tag:
 
 1. **Version.** `extension/manifest.json` `version` is what the stores see.
-   They reject a version they have already accepted. For this first package
-   that version is `1.0.0`, and the tag is `v1.0.0`.
-2. **Dates.** On the day you plan to tag, set the `## [1.0.0]` date in
-   `CHANGELOG.md` and **Last updated** in `docs/privacy.md` and
-   `extension/privacy.html` (English and Arabic) to that day. Keep the policy
-   text in those two files in sync, and commit the date changes before
-   building and testing the package. Leave the dates alone during review;
-   they are finalized for the actual release day.
+   Choose the next version before testing; stores reject a version they have
+   already accepted. The tag will be `v` followed by that version.
+2. **Changelog and policy.** Move the changes for this version out of
+   `Unreleased` into a dated changelog section. Leave released sections alone.
+   Update the privacy policy's **Last updated** date only when its content
+   changes, keeping `docs/privacy.md` and both languages of
+   `extension/privacy.html` in sync. Include those changes in the tested commit.
 3. **Build.** `./setup.sh --dev`. It checks every download and the built
    model against the pinned SHA-256.
 4. **Unit tests.** `cd tests && npm run unit`.
-5. **Browser tests.** Build the media once (see [testing](testing.md)), then:
-   - `node local.mjs` in Google Chrome (the full suite, about 40 minutes);
+5. **Browser tests.** Build the media once, including a real clip as `vlog`
+   (see [testing](testing.md)), then:
+   - `node local.mjs` in Google Chrome (the full suite on the real clip, about 40 minutes);
    - `QUICK=1 CHROME=<path> node local.mjs` in Brave, Edge and Chromium;
+   - `node interface.mjs` (the pages, the popup and the player's controls, in English and Arabic);
    - `node youtube.mjs` (live YouTube; retry a step an ad or bot check spoiled);
    - `node controls.mjs` (where the button sits in YouTube's own player);
    - `node memory.mjs`.
+
+   Keep each run's report and explain any failure.
 6. **Listen.** Load `extension/` and watch a few videos with speech over
    music, a song, a seek, a speed change and a live stream. The original is
    never heard while removal is on. The button sits in YouTube's control bar,
@@ -60,8 +63,8 @@ the store item:
 
 ## 2. Push main
 
-`main` must be the commit you tested, including the release-day dates from
-step 1, on top of `origin/main`. Review the history being published as well
+`main` must be the commit you tested, including the changelog and any policy
+changes from step 1, on top of `origin/main`. Review the history being published as well
 as the final files: deleting a file in a later commit does not remove its
 earlier versions.
 
@@ -83,18 +86,19 @@ you put in the store.
 ## 3. Tag
 
 Tag the tested commit you just pushed. It contains
-`.github/workflows/release.yml`, and `manifest.json` says `1.0.0`. If the
-tagging day changed, return to step 1: update and commit the dates, rebuild
-and test, then repeat step 2 before tagging.
+`.github/workflows/release.yml`, and its manifest version must match the tag.
+If the release contents change, rebuild and test that commit before tagging.
 
 ```sh
-git tag -a v1.0.0 main -m "Musicless 1.0.0"
-git push origin v1.0.0
+version=$(python3 -c 'import json; print(json.load(open("extension/manifest.json"))["version"])')
+git tag -a "v$version" main -m "Musicless $version"
+git push origin "v$version"
 ```
 
 The Release workflow has two jobs. The first runs the unit tests, builds
 `dist/musicless-<version>.zip` with `scripts/package.sh`, and tests the
-unzipped package: the full browser suite in Chrome and the memory check.
+unzipped package: the full local suite, interface checks and the memory check
+in Chrome.
 The second, the only one that can write, builds the zip again without
 the test tools, checks that it is the zip the tests ran (same SHA-256),
 writes `SHA256SUMS`, attests the zip and the checksum file, and opens a
@@ -107,7 +111,7 @@ Download the draft's zip, `SHA256SUMS`, and attestation file into one folder.
 
 ```sh
 sha256sum -c SHA256SUMS
-gh attestation verify musicless-1.0.0.zip --repo ieasybooks/musicless
+gh attestation verify musicless-*.zip --repo ieasybooks/musicless
 ```
 
 On macOS, `shasum -a 256 -c SHA256SUMS` checks the same file.
@@ -121,15 +125,18 @@ below.
 
 Musicless is published by ieasybooks. Open
 <https://chrome.google.com/webstore/devconsole/> with the ieasybooks
-developer account, the one that already publishes Baheth, and add Musicless
-there as a new item, not under a personal account. That account is
-registered, so there is no fee or sign-up; confirm that 2-Step Verification
-is still on and the contact email is still current.
+developer account and update the existing Musicless item. Confirm that
+2-Step Verification is still on and the contact email is current.
 
-Upload the zip from the draft. Fill the listing, the Arabic locale, privacy,
-and reviewer notes from [store-listing.md](store-listing.md) and
-[store-listing.ar.md](store-listing.ar.md). The Arabic page needs a native
-review first.
+Upload the verified release zip. Use the listing, Arabic locale, privacy,
+and reviewer notes in [store-listing.md](store-listing.md) and
+[store-listing.ar.md](store-listing.ar.md). Arabic text still marked
+**Needs native review** (the listing, the help page, the privacy policy's
+translation, and the labels [translations.md](translations.md) lists), and
+any changed Arabic wording, needs a native speaker's review before submission.
+
+A GitHub Release does not update copies installed from the store. Each
+store must receive the verified zip for the new version.
 
 The images in `docs/store/` come from `tests/screenshots.mjs`. Remake them
 after any change to the button, the pages or the strings:
@@ -160,7 +167,7 @@ pending for more than three weeks, contact developer support. Use deferred
 publishing if the release must wait for a chosen launch time.
 
 When you publish, install from the store in a clean profile, choose **Turn
-on**, and play one video. Put the store URL in the README's install
+on Musicless**, and play one video. Put the store URL in the README's install
 section, and in the repository homepage, only after the listing is live.
 
 ## 6. Edge Add-ons
@@ -170,7 +177,7 @@ dashboard.
 
 ## 7. Repository settings
 
-After `main` is the extension, and before you announce it:
+When setting up or reviewing the repository:
 
 1. **Description.** "Removes the background music from YouTube videos and keeps the voices. A Chrome extension; everything runs on your computer."
 2. **Topics.** `browser-extension`, `chrome-extension`, `chromium`, `webextension`, `youtube`, `privacy`, `onnx`, `webassembly`.
@@ -185,9 +192,3 @@ After `main` is the extension, and before you announce it:
 
 The issue forms use the labels `bug` and `enhancement`. Confirm those labels
 exist.
-
-## 8. The next update
-
-Raise `version`, update the changelog, tag `v` plus that version, and upload
-the new draft zip to the existing store item. A GitHub Release does not
-update copies installed from the store.

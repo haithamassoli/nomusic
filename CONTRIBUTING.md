@@ -15,7 +15,7 @@ Security vulnerabilities go through the private channel in
 
 ## Build
 
-You need `curl`, `tar`, and `python3`. Browser tests also need `ffmpeg`
+You need Node.js/npm, `curl`, `tar`, and `python3`. Browser tests also need `ffmpeg`
 and Google Chrome, Edge, Brave, or another Chromium browser.
 
 ```sh
@@ -36,14 +36,13 @@ do, Musicless does not remove music.
 
 ## Tests
 
-[docs/testing.md](docs/testing.md) is the full guide.
+Use the [test selection guide](docs/testing.md#choosing-checks) for the checks
+that cover your change and the commands to run them. It includes setup for
+local media, browser selection, package testing and live YouTube checks.
 
-```sh
-cd tests && npm run unit
-```
-
-The browser suites need the media built once, as that document describes.
-`QUICK=1 node local.mjs` is the short local run. CI runs it on the packaged zip.
+The [change map](docs/how-it-works.md#where-to-make-a-change) identifies the
+module that owns each behavior. After editing content-script modules, run
+`npm run build` before reloading the unpacked extension.
 
 ## Pull requests
 

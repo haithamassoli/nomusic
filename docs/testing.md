@@ -8,6 +8,29 @@ packaging always rebuilds it too. Instrumented browser-test copies are rebuilt
 after their test hooks are added. The browser
 tests also need `ffmpeg` and a Chromium browser (Google Chrome by default).
 
+## Choosing checks
+
+Run these commands from `tests/` after setup. `local.mjs` and `memory.mjs`
+play the media set `MEDIA_SET` names under `.work/media`: `vlog` (a real clip)
+by default, or `synth`, the generated set CI uses. `soak.mjs` plays `long`.
+Build the sets as described below.
+
+| Change | Checks |
+| --- | --- |
+| Any runtime or build change | `npm run unit` (includes parity and quality floors) |
+| Capture, workers or playback | `MEDIA_SET=synth QUICK=1 node local.mjs` |
+| Consent, settings, recovery, pages or player controls | `node interface.mjs` and QUICK |
+| Release candidate | The browser tests and listening in step 1 of the [release guide](release.md) |
+| YouTube markup or extension loading | `node controls.mjs` or `node loader.mjs`, plus local checks |
+| Memory lifetime or buffer retention | `MEDIA_SET=synth node memory.mjs` and `node soak.mjs` |
+
+`CHROME=/path/to/browser` selects Chrome, Edge, Brave or Chromium. Set
+`MUSICLESS_NO_SANDBOX=1` for portable browsers or containers that cannot run
+Chrome's sandbox. For concurrent local runs, choose separate `PORT` values
+and work folders; interface selects a free port by default. The memory, soak,
+YouTube, controls and screenshot scripts currently use fixed ports or live
+pages and should be run separately.
+
 ## Unit tests
 
 ```sh
@@ -51,9 +74,11 @@ MEDIA_SET=synth node local.mjs        # or vlog; QUICK=1 for a shorter run
 appended ahead of the playhead, abort and re-append on seek), with options to
 mute, autoplay, hide its Media Source in another frame or a worker, and play
 ClearKey-encrypted media. The suite installs the extension in a fresh profile
-with diagnostics added to its own copy of the extension: a recorder of the
-page's audio and Musicless's output on the same clock, and requests for Musicless's
-state. The release has neither. `analyze.py` then checks sync (against Spleeter run offline),
+with hooks from `tests/diagnostics/instrument.mjs` added to its own copy
+of the extension. `tests/diagnostics/recorder.js` records the page's audio and
+Musicless's output on the same clock; the state hooks let tests inspect
+Musicless's playback and workers. The release has neither. `analyze.py` then
+checks sync (against Spleeter run offline),
 dropouts and gaps (against 1x Spleeter of the exact source, at the media time
 each block was heard) and output while the video is silent. Its offline
 references are cached next to the media, keyed by the model and
@@ -85,6 +110,23 @@ release package) and `PORT` lets several browsers run side by side.
 sync holds. (The whole browser grows slowly while playing a long Media Source
 stream, by about as much without Musicless: 61 MB with Musicless off against 80 MB
 with it on over the same 12 minutes.)
+
+## Local interface
+
+```sh
+node interface.mjs                  # optional argument: /path/to/test-media
+```
+
+Focused checks in real Chrome, using local media and no live YouTube: returning
+from setup while the video is muted, leaving replacement documents alone
+(including after Back/Forward-cache restoration), reloading only the requesting
+frame of an embedded player,
+recovery-dialog keyboard focus, tooltip dismissal, stable Shorts button
+placement and the inline glyph in forced-colors mode. The player UI checks
+use the real Button module with a fixture Session; the return checks install
+the extension and play synthetic media. The Session unit tests also cover
+retrying a failure in place. `PORT` can select a local port; this suite chooses
+a free one by default.
 
 ## YouTube
 
@@ -128,21 +170,6 @@ Short's own buttons, and in an embedded player it joins the top row of
 buttons. Run it after YouTube changes its player. (The local test page has no
 YouTube controls, so `local.mjs` covers the corner button instead.)
 
-```sh
-MEDIA_SET=synth node interface.mjs /path/to/test-media
-```
-
-Focused checks in real Chrome, using local media and no live YouTube: returning
-from setup while the video is muted, leaving replacement documents alone
-(including after Back/Forward-cache restoration), reloading only the requesting
-frame of an embedded player,
-recovery-dialog keyboard focus, tooltip dismissal, stable Shorts button
-placement and the inline glyph in forced-colors mode. The player UI checks
-use the real Button module with a fixture Session; the return checks install
-the extension and play synthetic media. The Session unit tests also cover
-retrying a failure in place. `PORT` can select a local port; this suite chooses
-a free one by default.
-
 ## Store images
 
 ```sh
@@ -168,7 +195,7 @@ after turning it off (the model is released 30 s after nothing needs it).
 ## CI
 
 `.github/workflows/ci.yml` runs the setup and the unit tests, packages the
-extension, and runs the quick local suite on the unzipped package with the
-synthetic media in Chrome. On a tag, `.github/workflows/release.yml` runs the
-full local suite and the memory check on the package before it is attested
+extension, and runs QUICK and interface on the unzipped package with synthetic media
+in Chrome. On a tag, `.github/workflows/release.yml` runs the
+full local suite, interface and the memory check on the package before it is attested
 (see [release.md](release.md)).

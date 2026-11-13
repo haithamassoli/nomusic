@@ -121,7 +121,7 @@ the extension. Packaging rebuilds the content script automatically.
 
 - [Testing](docs/testing.md)
 - [Releasing](docs/release.md) and the [store listing](docs/store-listing.md)
-- [How it works](docs/how-it-works.md)
+- [How it works](docs/how-it-works.md) and [where to make a change](docs/how-it-works.md#where-to-make-a-change)
 - [Contributing](CONTRIBUTING.md)
 - [Security](SECURITY.md)
 - [Changelog](CHANGELOG.md)

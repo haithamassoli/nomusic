@@ -51,8 +51,19 @@ body:
     id: extension-version
     attributes:
       label: Musicless version
-      description: chrome://extensions (edge://extensions in Edge). Also say whether you installed from the Chrome Web Store or from a GitHub Release zip.
-      placeholder: "Example: 1.0.0, from the Chrome Web Store"
+      description: chrome://extensions (edge://extensions in Edge).
+      placeholder: "Example: 1.0.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: installation
+    attributes:
+      label: Installed from
+      options:
+        - Chrome Web Store
+        - A GitHub Release zip (loaded unpacked)
+        - Built from source (say the commit in the last box)
+        - Other (say where in the last box)
     validations:
       required: true
   - type: input
