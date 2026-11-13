@@ -24,8 +24,9 @@ Musicless works in Chrome, Edge, Brave and other Chromium browsers on a computer
 
 ### Chrome Web Store
 
-When the listing is public, install Musicless from the Chrome Web Store. There
-is no listing URL yet. This page will gain one after the listing is live.
+Install [Musicless from the Chrome Web Store](https://chromewebstore.google.com/detail/musicless/fllcnhpmoanojfbncfpdencchjlgphco),
+then reload any YouTube tabs that were already open. The store keeps it up to
+date.
 
 ### A GitHub Release
 
