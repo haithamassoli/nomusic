@@ -29,6 +29,7 @@ function workerSandbox({ supported = true, configure = null } = {}) {
   const timers = new Set();
   const decoders = [];
   const resampled = [];
+  const rawFrames = [];
   class AudioDecoder {
     // Like the browser's, the answer takes a moment.
     static isConfigSupported = () => new Promise((resolve) => env.setTimeout(() => resolve({ supported }), 10));
@@ -54,7 +55,15 @@ function workerSandbox({ supported = true, configure = null } = {}) {
     close() { this.state = "closed"; }
   }
   const env = {
-    ...grid, createDemuxer, configKey,
+    ...grid, configKey,
+    createDemuxer: (mime) => mime === "audio/test" ? {
+      reset() {},
+      push(bytes) {
+        const frames = rawFrames[bytes[0]];
+        this.config = frames[0].config;
+        return frames;
+      },
+    } : createDemuxer(mime),
     analyze: () => ({ spec: null, magnitude: new Float32Array(8) }),
     resample: (channels, rate, start, toStart, count) => {
       resampled.push({ rate, start, length: channels[0].length });
@@ -70,7 +79,8 @@ function workerSandbox({ supported = true, configure = null } = {}) {
     clearInterval: (timer) => timers.delete(timer),
     self: {},
   };
-  const inside = load("tab-worker.js", env, { expose: ["streams", "addFrames", "invalidate"] });
+  Object.assign(env, load("model-client.js", env));
+  load("tab-worker.js", env);
   const content = new Port();
   const modelPort = new Port();
   const w = {
@@ -117,16 +127,21 @@ function workerSandbox({ supported = true, configure = null } = {}) {
     changed() { return content.sent.filter((message) => message.type === "changed").map((message) => [...message.chunks]); },
     entry(id, entry) { w.send({ type: "entries", streamId: id, entries: [entry] }); },
     held(id) {
-      const stream = inside.streams.get(id);
-      return { frames: stream.frames.length, bytes: stream.bytes, first: stream.frames[0]?.time, last: stream.frames.at(-1)?.time };
+      w.send({ type: "stats", streamId: id });
+      return content.sent.at(-1);
     },
-    // Frames straight into a stream, as its demuxer would give them.
+    // Synthetic demuxer output for precise boundaries, rates and large frames.
+    // It enters through the same captured-entry protocol as the real fixtures.
     addRaw(id, frames, config = { codec: "opus", sampleRate: 48000, numberOfChannels: 2 }) {
-      const stream = inside.streams.get(id);
-      const buffer = stream.buffers.get(9) ?? stream.buffers.set(9, {}).get(9);
       for (const frame of frames) frame.config ??= config;
-      inside.invalidate(stream, inside.addFrames(stream, buffer, frames));
-      w.send({ type: "entries", streamId: id, entries: [] }); // lets the worker look for work
+      w.entry(id, { kind: "buffer", bufferId: 9, mime: "audio/test" });
+      for (let first = 0; first < frames.length;) {
+        let end = first + 1;
+        while (end < frames.length && configKey(frames[end].config) === configKey(frames[first].config)) end++;
+        const index = rawFrames.push(frames.slice(first, end)) - 1;
+        w.entry(id, { kind: "append", bufferId: 9, bytes: new Uint8Array([index]), offset: 0 });
+        first = end;
+      }
     },
     errors() { return content.sent.filter((message) => message.type === "error"); },
     // Moves the clock, running due timers in order and letting promises settle.
@@ -597,4 +612,28 @@ test("a sample-rate switch inside a window keeps the audio after it", async () =
   await w.advance();
   assert.equal(w.resampled.map((r) => `${r.rate}@${r.start.toFixed(2)}`).join(), "48000@0.00,44100@6.00");
   assert.equal(w.runs().length, 1);
+});
+
+test("a late model load cannot restart work after the load deadline", async () => {
+  const w = workerSandbox();
+  w.start();
+  await w.advance(61000);
+  assert.equal(w.errors().filter(message => message.fatal).length, 1);
+  w.ready();
+  w.stream(1); w.feed(1, 15); w.want(1, [{ k: 0, from: 0 }]);
+  await w.advance();
+  assert.equal(w.runs().length, 0);
+  assert.equal(w.content.sent.filter(message => message.type === "model").length, 0);
+});
+
+test("a failed model connection rejects subsequent work and reports failure once", async () => {
+  const w = workerSandbox();
+  w.start(); w.ready();
+  w.env.self.onmessage({ data: { type: "shared-model-failed" } });
+  w.env.self.onmessage({ data: { type: "shared-model-failed" } });
+  w.stream(1); w.feed(1, 15); w.want(1, [{ k: 0, from: 0 }]);
+  await w.advance();
+  assert.equal(w.runs().length, 0);
+  assert.equal(w.errors().filter(message => message.fatal).length, 1);
+  assert.equal(w.content.sent.filter(message => message.type === "model").length, 0);
 });

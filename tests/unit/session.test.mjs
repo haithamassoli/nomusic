@@ -66,6 +66,7 @@ function sessionSandbox({ video: props, settings = {}, streams = { "blob:a": 1 }
     importStretch: async () => ({ stretch }),
   };
   const { settings: preferences, ...globals } = env;
+  Object.assign(globals, load("failures.js", { t: env.t }), load("navigation.js", env));
   const { Session } = load("session.js", globals, {
     rewrite: (source) => source.replace('import("./stretch.js")', "importStretch()"),
   });
@@ -336,7 +337,7 @@ test("chunks kept from an earlier worker play only once the new one has checked 
 test("Retry reloads the page for failures only a reload can help, keeping a watch page's position", () => {
   const watch = sessionSandbox({ video: { currentTime: 75.6 } });
   watch.session.fail("uncaptured");
-  assert.equal(watch.session.retryReloads, true, "what the button says");
+  assert.equal(watch.session.failure.action, "reload", "what the button says");
   watch.session.retry();
   assert.deepEqual(watch.reloads, ["https://www.youtube.com/watch?v=abc&t=75s"]);
   const embed = sessionSandbox();
@@ -346,7 +347,7 @@ test("Retry reloads the page for failures only a reload can help, keeping a watc
   assert.deepEqual(embed.reloads, ["reload"]);
   const slow = sessionSandbox();
   slow.session.fail("slow");
-  assert.equal(slow.session.retryReloads, false);
+  assert.equal(slow.session.failure.action, "retry");
   slow.session.retry();
   assert.deepEqual(slow.reloads, [], "other failures try again in place");
   assert.equal(slow.session.failure, null);
@@ -388,7 +389,7 @@ test("a stream whose audio went by before consent holds the video and asks for a
   session.onEntries(1, [{ kind: "buffer", bufferId: 2, mime: "audio/webm" }], { missed: true });
   assert.equal(session.failure?.reason, "missed");
   assert.equal(session.failure.message, "failure_missed");
-  assert.equal(session.retryReloads, true, "the dialog's main action reloads the page");
+  assert.equal(session.failure.action, "reload", "the dialog's main action reloads the page");
   assert.equal(session.intent.held, true);
 });
 
@@ -433,7 +434,7 @@ test("if the sound still cannot start shortly after a click, the session fails c
   stuck.session.tick();
   assert.equal(stuck.session.failure?.reason, "audio");
   assert.equal(stuck.session.status, "failed");
-  assert.equal(stuck.session.retryReloads, true, "only a new page gets a new audio context");
+  assert.equal(stuck.session.failure.action, "reload", "only a new page gets a new audio context");
   assert.equal(stuck.session.intent.held, true, "still silent and paused until the user chooses");
   const started = blocked(); // the click lets it play
   started.ctx.state = "running";

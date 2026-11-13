@@ -13,7 +13,8 @@
 
 import { resumeAudio, routeElement } from "./audio.js";
 import { chunkIndex, chunkStart, OVERLAP_SAMPLES, RATE } from "./grid.js";
-import { t } from "./i18n.js";
+import { createFailure } from "./failures.js";
+import { reloadPage } from "./navigation.js";
 import { PlaybackIntent } from "./playback-intent.js";
 
 const AHEAD = 6; // chunks kept ready ahead of the playhead
@@ -30,40 +31,15 @@ const AUDIO_START_MS = 3000; // after the user's click, the sound starts well wi
 const FADE_SECONDS = 0.004; // time constant of the fade when playback stops
 const OVERLAP_SECONDS = OVERLAP_SAMPLES / RATE;
 
-// Why Musicless failed closed, in the user's language. Resolved now (see
-// i18n.js): the "updated" message shows after the extension itself is gone.
-const FAILURES = Object.fromEntries(
-  ["protected", "codec", "missed", "uncaptured", "source", "slow", "engine", "error", "audio", "updated"]
-    .map((reason) => [reason, t(`failure_${reason}`)]),
-);
-
 // Test diagnostics, only in the test harness's copy of the extension: it marks
 // its manifest, which no page can change.
-const DEBUG = (() => {
+export const DEBUG = (() => {
   try {
     return chrome.runtime.getManifest().musicless_test === true;
   } catch {
     return false;
   }
 })();
-export const debugEnabled = () => DEBUG;
-
-// Failures only a fresh page can help: Retry reloads it. That includes sound
-// that cannot start ("audio"): the video's sound already goes through an audio
-// context that will not run, and only a new page gets a new one. And a video
-// whose audio went by before Musicless was turned on ("missed").
-const RELOAD = new Set(["updated", "missed", "uncaptured", "engine", "audio"]);
-
-// Reload the page; a YouTube watch page keeps its position.
-export function reloadPage(time) {
-  if (/^(www|m)\.youtube\.com$/.test(location.hostname) && location.pathname === "/watch" && time >= 1) {
-    const url = new URL(location.href);
-    url.searchParams.set("t", `${Math.floor(time)}s`);
-    location.replace(url.href);
-  } else {
-    location.reload();
-  }
-}
 
 // Media attached as an object (a worker's Media Source, a stream) has no URL:
 // give each object a stable name so a change is still a new source.
@@ -89,7 +65,7 @@ export class Session {
     this.settings = settings;
     this.onChange = onChange;
     this.on = false; // Musicless wanted for the current source
-    this.failure = null; // { reason, message } while failed closed
+    this.failure = null; // while failed closed: createFailure()'s record (failures.js)
     this.status = "off";
     this.graph = null;
     this.bus = null; // gain node of the current playback run, faded out on stop
@@ -186,23 +162,14 @@ export class Session {
     this.update();
   }
 
-  // Whether Retry reloads the page, for the button's label.
-  get retryReloads() {
-    return RELOAD.has(this.failure?.reason);
-  }
-
   retry() {
-    if (this.retryReloads) {
+    if (this.failure?.action === "reload") {
       reloadPage(this.video.currentTime);
       return;
     }
     this.failure = null;
     this.startSource();
     this.tick();
-  }
-
-  returnToOriginal() {
-    this.turnOff();
   }
 
   // The user turned Musicless on, or off again (the welcome page, the popup).
@@ -378,7 +345,7 @@ export class Session {
 
   fail(reason, detail) {
     if (!this.on || !this.settings.consented || this.failure || this.disposed) return;
-    this.failure = { reason, message: FAILURES[reason] ?? FAILURES.error, detail: detail ?? null };
+    this.failure = createFailure(reason, detail);
     this.stopProcessing();
     if (this.graph) this.graph.original.gain.value = 0;
     this.intent.hold(); // keep the music from playing until the user decides
@@ -396,7 +363,7 @@ export class Session {
     this.chunks.set(message.k, { buffer, validFrom: message.validFrom, cut: message.cut, print: message.print });
     this.unchecked.delete(message.k);
     this.stats.made++;
-    if (debugEnabled()) {
+    if (DEBUG) {
       this.stats.timings.push({ k: message.k, ...message.timing });
       if (this.stats.timings.length > 40) this.stats.timings.shift();
     }
@@ -410,7 +377,7 @@ export class Session {
   }
 
   trace(event) {
-    if (!debugEnabled()) return;
+    if (!DEBUG) return;
     this.events.push({ ctx: +(this.graph?.ctx.currentTime ?? 0).toFixed(3), media: +this.video.currentTime.toFixed(3), ...event });
     if (this.events.length > 120) this.events.shift();
   }
@@ -447,7 +414,7 @@ export class Session {
     const video = this.video;
     if (!this.on || this.failure || !this.attached || video.paused || video.seeking || video.readyState < 3) return;
     this.noteClock();
-    if (debugEnabled()) this.stats.resyncs++;
+    if (DEBUG) this.stats.resyncs++;
     this.recentDrift = [];
     this.trace({ e: "resync", rate: video.playbackRate });
     this.anchor = { ctx: this.graph.ctx.currentTime, media: video.currentTime, rate: video.playbackRate };
@@ -507,7 +474,7 @@ export class Session {
     source.onended = () => {
       if (this.sources.get(k) === source) this.sources.delete(k);
     };
-    if (debugEnabled() && this.stats.firstAudioMs === null) this.stats.firstAudioMs = performance.now() - this.stats.started;
+    if (DEBUG && this.stats.firstAudioMs === null) this.stats.firstAudioMs = performance.now() - this.stats.started;
   }
 
   unschedule(k) {
@@ -561,7 +528,7 @@ export class Session {
   hold() {
     if (!this.intent.held) {
       this.holdStarted = performance.now();
-      if (debugEnabled()) this.stats.holds++;
+      if (DEBUG) this.stats.holds++;
       this.trace({ e: "hold" });
     }
     this.intent.hold();
@@ -618,7 +585,7 @@ export class Session {
       this.idleSince = null;
     }
 
-    if (debugEnabled() && ++this.ticks % 8 === 0) this.engine.post({ type: "stats", streamId: this.workerId });
+    if (DEBUG && ++this.ticks % 8 === 0) this.engine.post({ type: "stats", streamId: this.workerId });
     const time = video.currentTime;
     const k = chunkIndex(time);
     const last = Number.isFinite(video.duration) ? chunkIndex(Math.max(0, video.duration - 0.001)) : Infinity;
@@ -690,7 +657,7 @@ export class Session {
         for (let i = k; i <= k + 2; i++) this.schedule(i);
         const expected = this.anchor.media + (this.graph.ctx.currentTime - this.anchor.ctx) * this.anchor.rate;
         const drift = video.currentTime - expected;
-        if (debugEnabled()) {
+        if (DEBUG) {
           this.stats.drift.push(Math.round(drift * 1000));
           if (this.stats.drift.length > 80) this.stats.drift.shift();
         }

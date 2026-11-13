@@ -12,6 +12,7 @@
 //   video that played before Musicless was turned on, to say that a reload will.
 
 import { setLanguage, t } from "./i18n.js";
+import { CUT, CUT_WIDTH, DOT, NOTE, STRIKE, STRIKE_WIDTH } from "./player-glyph.js";
 
 // Everything below is resolved while the extension is certainly alive (see
 // i18n.js): the "updated" failure shows after it is gone.
@@ -20,8 +21,6 @@ const TEXT = {
   restore: t("control_on"),
   working: t("notice_working"),
   done: t("notice_done"),
-  title: t("panel_title"),
-  ready: t("done_heading"),
   retry: t("panel_retry"),
   reload: t("panel_reload"),
   original: t("panel_original"),
@@ -38,10 +37,6 @@ const STATES = {
   failed: ["error", TEXT.remove, ""],
 };
 const WAITS = new Set(["starting", "buffering"]);
-// Failures that no retry and no reload can help: the video's own sound
-// (locked, or in a format Musicless cannot read), or a player whose sound it
-// cannot reach. The dialog offers only the music.
-const FINAL = new Set(["protected", "codec", "source"]);
 // A hold shorter than this shows nothing (a short one after a stall would only flicker).
 const NOTICE_DELAY_MS = 400;
 // The words come with the spinner while a video starts, when nobody knows yet
@@ -50,22 +45,9 @@ const WORDS_DELAY_MS = 1500;
 // Less motion: our still spinner instead of YouTube's turning one.
 const stillness = matchMedia("(prefers-reduced-motion: reduce)");
 
-// The glyph, on YouTube's 24 px grid and in its 2-unit weight: a note (round
-// head, straight stem, square flag), plain while the music plays; struck through
-// while Musicless removes it, the strike a little above the diagonal so it clears
-// the head, cutting a gap 1.2 units above it and 0.7 below, as Material's "off"
-// icons do; and a dot at the bottom right while Musicless waits for the user.
-// tools/icons.mjs draws the player's glyphs from the same note. Built with DOM
-// calls: YouTube's pages accept only trusted markup.
+// The glyph's geometry is in player-glyph.js. Built with DOM calls: YouTube's
+// pages accept only trusted markup.
 const SVG = "http://www.w3.org/2000/svg";
-const NOTE = [
-  ["circle", { cx: 9.2, cy: 17.9, r: 4.2 }],
-  ["rect", { x: 11.4, y: 1.9, width: 2, height: 16 }],
-  ["rect", { x: 11.4, y: 1.9, width: 6.4, height: 4.4 }],
-];
-const STRIKE = "M3.4 2.3 21.4 20.3";
-const CUT = "M3.58 2.12 21.58 20.12";
-const DOT = { cx: 19.6, cy: 19.6, r: 2.6 };
 const PLAY = "M8 5.5v13l10.5-6.5z";
 let glyphs = 0;
 function svg(tag, attributes, ...children) {
@@ -86,11 +68,11 @@ function glyph() {
   return svg("svg", { viewBox: "0 0 24 24", "aria-hidden": "true", focusable: "false" },
     svg("mask", { id: cut, maskUnits: "userSpaceOnUse" },
       svg("rect", { width: 24, height: 24, fill: "#fff" }),
-      svg("path", { d: CUT, stroke: "#000", "stroke-width": 3.9, "stroke-linecap": "round" })),
+      svg("path", { d: CUT, stroke: "#000", "stroke-width": CUT_WIDTH, "stroke-linecap": "round" })),
     note({ class: "musicless-glyph-plain" }),
     svg("g", { class: "musicless-glyph-struck" },
       note({ mask: `url(#${cut})` }),
-      svg("path", { d: STRIKE, stroke: "currentColor", "stroke-width": 2, "stroke-linecap": "round", fill: "none" })),
+      svg("path", { d: STRIKE, stroke: "currentColor", "stroke-width": STRIKE_WIDTH, "stroke-linecap": "round", fill: "none" })),
     svg("circle", { class: "musicless-glyph-dot", ...DOT }));
 }
 
@@ -194,7 +176,7 @@ export class Button {
         // the page play sound, so the music is heard. The play button in the
         // middle is the way to start the sound with the music removed.
         this.session.toggle();
-        this.session.returnToOriginal();
+        this.session.turnOff();
       } else this.session.toggle();
     }));
     // A play attempt while a failure waits for the user's choice (the dialog
@@ -261,18 +243,15 @@ export class Button {
     if (session.failure !== this.shownFailure) {
       this.shownFailure = session.failure;
       if (session.failure) {
-        const { reason, message } = session.failure;
-        // A video that played before Musicless was turned on did not fail: the
-        // dialog says that Musicless is on, and that a reload will do.
-        this.recoveryTitle.textContent = reason === "missed" ? TEXT.ready : TEXT.title;
-        // The title already says what happened; a reason without more to say is left out.
-        this.recoveryMessage.textContent = reason === "error" ? "" : message;
+        const { action, title, message, describe } = session.failure;
+        this.recoveryTitle.textContent = title;
+        this.recoveryMessage.textContent = describe ? message : "";
         attr(this.recovery, "aria-describedby", this.recoveryMessage.textContent ? this.recoveryMessage.id : null);
         // Where nothing can help (a locked video, say), the music is the one
         // choice left, so it becomes the main action.
-        const final = FINAL.has(reason);
+        const final = action === null;
         this.retryBtn.hidden = final;
-        this.retryBtn.textContent = session.retryReloads ? TEXT.reload : TEXT.retry;
+        this.retryBtn.textContent = action === "reload" ? TEXT.reload : TEXT.retry;
         this.returnBtn.classList.toggle("musicless-dialog__action--main", final);
         this.openRecovery({ focus: true });
       } else {
@@ -382,7 +361,7 @@ export class Button {
     this.recoveryMessage = html("p", { className: "musicless-dialog__message", id: `${id}-message` });
     this.retryBtn = this.action("retry", () => this.session.retry());
     this.retryBtn.classList.add("musicless-dialog__action--main");
-    this.returnBtn = this.action("original", () => this.session.returnToOriginal());
+    this.returnBtn = this.action("original", () => this.session.turnOff());
     this.returnBtn.textContent = TEXT.original;
     // The way out first, as a quiet text button; the action that keeps the
     // music off last, where dialogs put their main one, and focused. The

@@ -43,5 +43,5 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message?.type !== "engine-token") return;
   engineToken().then((token) => sendResponse({ token }), () => sendResponse({}));
-  return true; // the answer comes later
+  return true; // Chrome keeps sendResponse available for the async reply.
 });

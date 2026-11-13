@@ -61,6 +61,7 @@ async function playerUI(page, shorts = false) {
     const css = document.createElement("link"); css.rel = "stylesheet"; css.href = "content.css";
     const loaded = new Promise(resolve => { css.onload = resolve; }); document.head.append(css); await loaded;
     const { Button } = await import(chrome.runtime.getURL("button.js"));
+    const { createFailure } = await import(chrome.runtime.getURL("failures.js"));
     document.body.replaceChildren();
     const input = Object.assign(document.createElement("input"), { id: "comment", placeholder: "Comment outside the player" });
     const next = Object.assign(document.createElement("button"), { id: "next", textContent: "Next page control" });
@@ -75,9 +76,9 @@ async function playerUI(page, shorts = false) {
       top.append(row); root.append(top);
     }
     document.body.append(input, next, root);
-    const session = { status: "off", on: false, sourceUrl: "blob:ui-fixture", failure: null, retryReloads: false };
+    const session = { status: "off", on: false, sourceUrl: "blob:ui-fixture", failure: null };
     const control = new Button(video, session); control.position(host);
-    window.ui = { session, control, host };
+    window.ui = { session, control, host, createFailure };
   }, shorts);
 }
 
@@ -162,7 +163,7 @@ try {
     await page.click("#comment");
     await page.type("#comment", "Writing a comment");
     await page.evaluate(() => {
-      ui.session.status = "failed"; ui.session.failure = { reason: "slow", message: "UI test failure" }; ui.control.render();
+      ui.session.status = "failed"; ui.session.failure = ui.createFailure("slow"); ui.control.render();
     });
     assert.equal(await page.evaluate(() => document.activeElement.id), "comment");
     await page.keyboard.press("Tab");

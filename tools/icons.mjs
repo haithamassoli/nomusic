@@ -7,12 +7,15 @@
 // Usage (from the repository root): node tools/icons.mjs
 // Needs the test tools (./setup.sh --dev) and a Chromium browser (CHROME, as
 // for the tests).
-import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import puppeteer from "../tests/node_modules/puppeteer-core/lib/esm/puppeteer/puppeteer-core.js";
+import { chromePath } from "./chrome.mjs";
+import { CUT, CUT_WIDTH, NOTE, STRIKE, STRIKE_WIDTH } from "../extension/player-glyph.js";
 
-const ROOT = new URL("../", import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL("../", import.meta.url));
 const BRAND = join(ROOT, "assets/brand");
 const INK = "#1f1d1a";
 
@@ -23,21 +26,12 @@ function sized(name, width) {
   return source.replace(/ width="[^"]*" height="[^"]*"/, ` width="${width}" height="${+(width * h / w).toFixed(2)}"`);
 }
 
-// The player button's note on its 24-unit grid, as in button.js: a round
-// head, a straight stem and a square flag, in YouTube's icon weight; struck
-// through corner to corner while the music is removed, the strike cutting a
-// gap of `gap` units above it and `low` below it.
-let masks = 0;
-function note({ color = "#fff", stroke = 2, gap = 1.2, low = 0.7 } = {}) {
-  const id = `cut${++masks}`;
-  const shift = ((gap - low) / 2) * Math.SQRT1_2; // the cut's centre, up and to the right of the strike's
-  const at = (x, y) => `${+(x + shift).toFixed(2)} ${+(y - shift).toFixed(2)}`;
-  return `<mask id="${id}" maskUnits="userSpaceOnUse"><rect x="-4" y="-4" width="32" height="32" fill="#fff"/>` +
-    `<path d="M${at(3.4, 2.3)} ${at(21.4, 20.3)}" stroke="#000" stroke-width="${+(stroke + gap + low).toFixed(2)}" stroke-linecap="round"/></mask>` +
-    `<g mask="url(#${id})" fill="${color}">${PLAIN}</g>` +
-    `<path d="M3.4 2.3 21.4 20.3" stroke="${color}" stroke-width="${stroke}" stroke-linecap="round"/>`;
-}
-const PLAIN = `<circle cx="9.2" cy="17.9" r="4.2"/><rect x="11.4" y="1.9" width="2" height="16"/><rect x="11.4" y="1.9" width="6.4" height="4.4"/>`;
+const PLAIN = NOTE.map(([tag, attributes]) =>
+  `<${tag} ${Object.entries(attributes).map(([name, value]) => `${name}="${value}"`).join(" ")}/>`).join("");
+const struck = `<mask id="cut1" maskUnits="userSpaceOnUse"><rect x="-4" y="-4" width="32" height="32" fill="#fff"/>` +
+  `<path d="${CUT}" stroke="#000" stroke-width="${CUT_WIDTH}" stroke-linecap="round"/></mask>` +
+  `<g mask="url(#cut1)" fill="#fff">${PLAIN}</g>` +
+  `<path d="${STRIKE}" stroke="#fff" stroke-width="${STRIKE_WIDTH}" stroke-linecap="round"/>`;
 
 async function render(page, html, width, height, file) {
   await page.setViewport({ width, height, deviceScaleFactor: 1 });
@@ -45,12 +39,9 @@ async function render(page, html, width, height, file) {
   await page.screenshot({ path: file, omitBackground: true, clip: { x: 0, y: 0, width, height } });
 }
 
-const chrome = process.env.CHROME ?? ["/usr/bin/google-chrome", "/usr/bin/chromium", "/usr/bin/chromium-browser",
-  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"].find((path) => existsSync(path));
-if (!chrome) throw new Error("No browser found: set CHROME to a Chromium browser.");
 const profile = mkdtempSync(join(process.env.TMPDIR ?? tmpdir(), "musicless-icons-"));
 const browser = await puppeteer.launch({
-  executablePath: chrome, headless: true, pipe: true, userDataDir: profile,
+  executablePath: chromePath(), headless: true, pipe: true, userDataDir: profile,
   args: ["--no-first-run", "--mute-audio", "--disable-gpu", ...(process.env.MUSICLESS_NO_SANDBOX === "1" ? ["--no-sandbox"] : [])],
 });
 try {
@@ -73,7 +64,7 @@ try {
     }
   }
   // The player button's two glyphs, for sentences that point at it.
-  writeFileSync(join(ROOT, "extension/icons/player-on.svg"), `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">${note()}</svg>\n`);
+  writeFileSync(join(ROOT, "extension/icons/player-on.svg"), `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">${struck}</svg>\n`);
   writeFileSync(join(ROOT, "extension/icons/player-off.svg"), `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g fill="#fff">${PLAIN}</g></svg>\n`);
   console.log("wrote extension/icons/icon-{16,32,48,128}.png, extension/icons/{icon,player-on,player-off}.svg, extension/icons/musicless-logo{,-ar}-{ink,paper}.svg, docs/store/store-icon-128.png, docs/store/promo-tile-440x280.png");
 } finally {

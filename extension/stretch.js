@@ -5,12 +5,10 @@
 // feed/process/flush loop over one chunk and returns a buffer ~1/rate its
 // length with the pitch preserved. See third_party/soundtouch/.
 //
-// Loaded as an ES module (dynamically imported by session.js the first time a
-// session needs it), so the library only loads when pitch-preserve is actually
-// used. The static import below pulls in only Stretch.js + its three buffer
-// helpers — not the package index, which would also drag in the rate
-// transposer's interpolation-strategy dependency we don't use.
-// ---------------------------------------------------------------------------
+// session.js imports this module the first time a session plays at a rate
+// other than 1, so the library loads only when it is needed. Import only the
+// WSOLA implementation; the package index also pulls in a rate transposer that
+// Musicless does not use.
 import Stretch from "./third_party/soundtouch/Stretch.js";
 
 // WSOLA time-stretch tuning for speech/vocals. sequence/seek/overlap in ms.
@@ -50,7 +48,6 @@ export async function stretch(channels, rate, sampleRate) {
   }
 
   const st = new Stretch({ createBuffers: true });
-  // Short window + ~50% overlap (no verbatim middle) — see the constants above.
   st.setParameters(sampleRate, WSOLA_SEQUENCE_MS, WSOLA_SEEK_MS, WSOLA_OVERLAP_MS);
   st.tempo = rate; // tempo > 1 shortens (faster); pitch is preserved
   st.quickSeek = WSOLA_QUICK_SEEK;

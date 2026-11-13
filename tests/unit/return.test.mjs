@@ -1,14 +1,12 @@
 // Return-to-video coordination, without running audio or navigating a browser.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import * as grid from "../../extension/grid.js";
 import { flush, load, plain } from "./sandbox.mjs";
 
 function returning(videos) {
   const events = [], scheduled = [];
-  const { reloadPage } = load("session.js", {
-    ...grid, URL, t: (key) => key,
-    chrome: { runtime: { getManifest: () => ({}) } },
+  const { reloadPage } = load("navigation.js", {
+    URL,
     location: {
       hostname: "www.youtube.com", pathname: "/watch", href: "https://www.youtube.com/watch?v=test",
       replace: (url) => events.push(["navigate", url]), reload: () => events.push(["reload"]),

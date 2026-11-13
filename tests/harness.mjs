@@ -1,11 +1,13 @@
 // Shared browser-test helpers: install the extension into a fresh browser
 // profile, read Musicless's state, record what actually played, and analyze it.
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import puppeteer from "puppeteer-core";
 import { buildContent } from "../tools/build-content.mjs";
 import { instrumentExtension } from "./diagnostics/instrument.mjs";
+import { chromePath } from "../tools/chrome.mjs";
+export { chromePath };
 
 const TESTS = new URL(".", import.meta.url).pathname;
 export const WORK = process.env.MUSICLESS_TEST_DIR ?? join(TESTS, ".work");
@@ -36,15 +38,6 @@ function testExtension({ diagnostics = true } = {}) {
   }
   writeFileSync(join(dir, "manifest.json"), JSON.stringify(manifest, null, 2));
   return dir;
-}
-
-export function chromePath() {
-  if (process.env.CHROME) return process.env.CHROME;
-  for (const candidate of ["/usr/bin/google-chrome", "/usr/bin/chromium", "/usr/bin/chromium-browser",
-    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"]) {
-    if (existsSync(candidate)) return candidate;
-  }
-  throw new Error("No browser found: set CHROME to a Chrome, Edge, Brave or Chromium executable.");
 }
 
 // `autoplay: false` keeps the browser's real autoplay policy (sound needs a user gesture).

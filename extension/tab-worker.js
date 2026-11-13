@@ -8,6 +8,7 @@
 // decoding stays in this per-tab worker.
 
 import { configKey, createDemuxer } from "./demux.js";
+import { connectModel } from "./model-client.js";
 import { analyze, resample, synthesize } from "./dsp.js";
 import { applyFades, chunkIndex, chunkStart, RATE, WINDOW_SAMPLES, WINDOW_SECONDS } from "./grid.js";
 
@@ -19,11 +20,6 @@ const LEAD_TOLERANCE = 0.3; // the page asks from 0.25 s before the playhead
 const KEEP_BEHIND_SECONDS = 900;
 const KEEP_AHEAD_SECONDS = 900;
 const MAX_STREAM_BYTES = 64 * 2 ** 20; // far more than 30 minutes of the audio players send
-const LOAD_TIMEOUT_MS = 60000;
-const RUN_TIMEOUT_MS = 120000;
-const MODEL_PING_MS = 5000;
-const MODEL_SILENT_MS = 30000; // longer than the shared model ever runs one job
-
 let port = null;
 let model = null;
 // stream id -> { id, buffers, frames, removed, bytes, ended, duration, wanted, done, carried, replayed, playing, position }
@@ -33,91 +29,6 @@ let current = null; // the job being separated
 const supported = new Map(); // decoder config -> whether this browser decodes it (a promise)
 
 const send = (message, transfer) => port.postMessage(message, transfer ?? []);
-
-// ---- model access -----------------------------------------------------------
-
-// The shared model. If it cannot start, or stops later (its process crashed,
-// say), the worker cannot go on: the content script starts the engine again.
-function sharedModel(modelPort) {
-  const pending = new Map();
-  let nextId = 1;
-  let started = false;
-  let pinged = 0;
-  let settle;
-  const ready = new Promise((resolve, reject) => {
-    settle = { resolve, reject };
-  });
-  const failed = (message) => {
-    clearInterval(watch);
-    if (!started) {
-      settle.reject(new Error(message));
-      return;
-    }
-    send({ type: "error", fatal: true, message: `The shared model stopped: ${message}` });
-    for (const job of pending.values()) {
-      clearTimeout(job.timer);
-      job.reject(new Error(message));
-    }
-    pending.clear();
-  };
-  // While results are due, ask now and then: a shared model that stays silent has stopped.
-  const watch = setInterval(() => {
-    if (!started || !pending.size) {
-      pinged = 0;
-    } else if (!pinged) {
-      pinged = performance.now();
-      modelPort.postMessage({ type: "ping" });
-    } else if (performance.now() - pinged > MODEL_SILENT_MS) {
-      failed("it stopped answering");
-    }
-  }, MODEL_PING_MS);
-  modelPort.onmessage = ({ data }) => {
-    pinged = 0;
-    if (data.type === "ready") {
-      started = true;
-      settle.resolve(data.seconds);
-    } else if (data.type === "failed") {
-      failed(data.message);
-    } else if (data.type === "result" || data.type === "error") {
-      const job = pending.get(data.id);
-      if (!job) return;
-      pending.delete(data.id);
-      clearTimeout(job.timer);
-      if (data.type === "result") job.resolve({ mask: data.mask, ms: data.ms });
-      else job.reject(new Error(data.message));
-    }
-  };
-  modelPort.postMessage({ type: "load" });
-  return {
-    failed,
-    load: () => ready,
-    async run(magnitude, priority) {
-      await ready;
-      return new Promise((resolve, reject) => {
-        const id = nextId++;
-        const timer = setTimeout(() => {
-          pending.delete(id);
-          reject(new Error("the shared model stopped answering"));
-        }, RUN_TIMEOUT_MS);
-        pending.set(id, { resolve, reject, timer });
-        modelPort.postMessage({ type: "run", id, priority, magnitude }, [magnitude.buffer]);
-      });
-    },
-  };
-}
-
-// A model that fails to load, or takes far too long, ends this worker: the
-// content script starts the engine again (once).
-function loadModel() {
-  let timer;
-  const late = new Promise((resolve, reject) => {
-    timer = setTimeout(() => reject(new Error("it took too long")), LOAD_TIMEOUT_MS);
-  });
-  return Promise.race([model.load(), late]).finally(() => clearTimeout(timer)).then(
-    (seconds) => send({ type: "model", seconds }),
-    (error) => send({ type: "error", fatal: true, message: `The model failed to load: ${error.message}` }),
-  );
-}
 
 // ---- captured audio ---------------------------------------------------------
 
@@ -642,8 +553,12 @@ self.onmessage = (event) => {
   }
   if (event.data?.type !== "port") return;
   [port] = event.ports;
-  model = sharedModel(event.ports[1]);
+  // A shared model that cannot start, or stops later (its process crashed, say),
+  // ends this worker: the content script starts the engine again (once).
+  model = connectModel(event.ports[1], {
+    onReady: (seconds) => send({ type: "model", seconds }),
+    onFailure: (message) => send({ type: "error", fatal: true, message }),
+  });
   port.onmessage = onMessage;
   send({ type: "connected" });
-  loadModel();
 };

@@ -7,7 +7,8 @@
 import { Button } from "./button.js";
 import { CaptureBus } from "./capture-bus.js";
 import { Engine } from "./engine.js";
-import { debugEnabled, reloadPage, Session } from "./session.js";
+import { DEBUG, Session } from "./session.js";
+import { reloadPage } from "./navigation.js";
 import { loadSettings, onSettingsChanged, settings } from "./settings.js";
 
 const capture = new CaptureBus();
@@ -46,7 +47,7 @@ function render(controller) {
   if (!controller.button && session.failure) anchor(controller);
   if (!controller.button) return;
   controller.button.render();
-  if (debugEnabled()) controller.button.el.dataset.musiclessDebug = JSON.stringify(session.snapshot());
+  if (DEBUG) controller.button.el.dataset.musiclessDebug = JSON.stringify(session.snapshot());
 }
 
 // Does the video show at all? (A torn-down player or a hidden preview does not.)
