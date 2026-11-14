@@ -101,8 +101,8 @@ is not uploaded, shared, or saved as an audio file. The developer receives no
 audio, browsing history, identifiers, or usage analytics. There is no account.
 
 The automatic-removal setting, and whether you have chosen **Turn on Musicless**, are
-stored in Chrome's extension storage and may sync between your devices if
-Chrome Sync is enabled. See the [privacy policy](docs/privacy.md).
+stored in your browser's extension storage and may sync between your devices
+through your browser's sync. See the [privacy policy](docs/privacy.md).
 
 YouTube still loads the video through its own service.
 

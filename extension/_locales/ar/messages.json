@@ -28,7 +28,7 @@
   "failure_updated": { "message": "تم تحديث إضافة «بلا موسيقى» أو إيقافها. أعد تحميل الصفحة للمتابعة." },
 
   "setup_heading": { "message": "شاهد YouTube بدون موسيقى" },
-  "consent_text": {"message": "تستخدم إضافة «بلا موسيقى» صوت فيديوهات YouTube التي تشاهدها لإزالة معظم الموسيقى، على حاسوبك فقط. لا تحفظ الصوت ولا ترسله إلى أي مكان. قد تتزامن إعداداتك عبر Chrome Sync."},
+  "consent_text": {"message": "تستخدم إضافة «بلا موسيقى» صوت فيديوهات YouTube التي تشاهدها لإزالة معظم الموسيقى، على حاسوبك فقط. لا تحفظ الصوت ولا ترسله إلى أي مكان. قد يزامن متصفحك إعداداتك."},
   "consent_accept": {"message": "تفعيل «بلا موسيقى»", "description": "The affirmative choice under the local-audio disclosure."},
   "done_heading": {"message": "تم تفعيل «بلا موسيقى»", "description": "After consent; also the title when an already-open video needs reloading."},
   "done_step1_title": {"message": "شغّل أي فيديو.", "description": "First next-step title when automatic removal is on."},

@@ -17,7 +17,7 @@ Conventions
   تفعيل «بلا موسيقى»; `extension_name` alone has none. When the name is the subject of a sentence,
   write إضافة «بلا موسيقى» with feminine agreement (تستخدم، لا تدعم، إيقافها); the bare name keeps
   the masculine agreement Musicless had (أيقونته، فعّله).
-- Keep YouTube (YouTube™ where the English has it), Chrome Sync, Chrome, Edge, Brave,
+- Keep YouTube (YouTube™ where the English has it), Chrome, Edge, Brave,
   Chromium, GitHub and Google in Latin script, in running text and in labels alike.
 - Glossary: voices = الأصوات البشرية; voice = الصوت البشري; sound or audio (the video's audio) =
   الصوت; music = الموسيقى; background music = موسيقى الخلفية; musical instruments =
@@ -37,8 +37,8 @@ Conventions
   uploading, and settings sync. {icon} is replaced by the actual player-button glyph.
 - Western digits; no ellipsis (a spinner already says that something is in progress); the
   Arabic comma ، in Arabic text; typographic apostrophes (’) in English. Latin tokens
-  (YouTube, Chrome Sync, 400) keep their logical order inside right-to-left text; "Chrome
-  Sync" is joined by a no-break space so a line never breaks inside it. Character counts
+  (YouTube, 400) keep their logical order inside right-to-left text; "فيديوهات YouTube" is
+  joined by a no-break space so a line never breaks inside it. Character counts
   include combining marks and are not rendered widths.
 
 | Key | English | Arabic | Notes |
@@ -68,7 +68,7 @@ Conventions
 | `failure_audio` | The sound didn’t start. Try reloading the page. | <div dir="rtl">لم يعمل الصوت. جرّب إعادة تحميل الصفحة.</div> | Says the sound did not start and gives the available next step. |
 | `failure_updated` | Musicless was updated or turned off. Reload the page to continue. | <div dir="rtl">تم تحديث إضافة «بلا موسيقى» أو إيقافها. أعد تحميل الصفحة للمتابعة.</div> | Shown after the extension was updated or removed; chrome.i18n is gone by then, so the text is resolved at load. |
 | `setup_heading` | Watch YouTube without the music | <div dir="rtl">شاهد YouTube بدون موسيقى</div> | Heading of the first-run page: what the user gets. An imperative, as the English (شاهد). |
-| `consent_text` | Musicless uses the audio from the YouTube videos you watch to remove most of the music, all on your computer. It never saves or uploads the audio. Your settings may sync through Chrome Sync. | <div dir="rtl">تستخدم إضافة «بلا موسيقى» صوت فيديوهات YouTube التي تشاهدها لإزالة معظم الموسيقى، على حاسوبك فقط. لا تحفظ الصوت ولا ترسله إلى أي مكان. قد تتزامن إعداداتك عبر Chrome Sync.</div> | Before consent, explain that the videos’ audio is used only on the computer to remove most music, never saved or uploaded, and settings may sync through Chrome Sync. Arabic says لا ترسله rather than ترفعه, which can mean turning up the volume. Keep the no-break spaces in فيديوهات YouTube and Chrome Sync. |
+| `consent_text` | Musicless uses the audio from the YouTube videos you watch to remove most of the music, all on your computer. It never saves or uploads the audio. Your browser may sync your settings. | <div dir="rtl">تستخدم إضافة «بلا موسيقى» صوت فيديوهات YouTube التي تشاهدها لإزالة معظم الموسيقى، على حاسوبك فقط. لا تحفظ الصوت ولا ترسله إلى أي مكان. قد يزامن متصفحك إعداداتك.</div> | Before consent, explain that the videos’ audio is used only on the computer to remove most music, never saved or uploaded, and settings may sync through the browser’s sync. Arabic says لا ترسله rather than ترفعه, which can mean turning up the volume. Keep the no-break space in فيديوهات YouTube. |
 | `consent_accept` | Turn on Musicless | <div dir="rtl">تفعيل «بلا موسيقى»</div> | The affirmative choice under the local-audio disclosure. |
 | `done_heading` | Musicless is on | <div dir="rtl">تم تفعيل «بلا موسيقى»</div> | After consent; also the title when an already-open video needs reloading. |
 | `done_step1_title` | Play any video. | <div dir="rtl">شغّل أي فيديو.</div> | Draft Arabic: native review required. First next-step title when automatic removal is on. |

@@ -28,7 +28,7 @@
   "failure_updated": { "message": "Musicless was updated or turned off. Reload the page to continue." },
 
   "setup_heading": { "message": "Watch YouTube without the music", "description": "Heading of the first-run page: what the user gets." },
-  "consent_text": {"message": "Musicless uses the audio from the YouTube videos you watch to remove most of the music, all on your computer. It never saves or uploads the audio. Your settings may sync through Chrome Sync.", "description": "Disclosure before any audio is read, on the first-run page and in the popup. Keep all facts: uses the audio of the videos watched on YouTube, only on the computer, never saves or uploads it, settings may sync through Chrome Sync."},
+  "consent_text": {"message": "Musicless uses the audio from the YouTube videos you watch to remove most of the music, all on your computer. It never saves or uploads the audio. Your browser may sync your settings.", "description": "Disclosure before any audio is read, on the first-run page and in the popup. Keep all facts: uses the audio of the videos watched on YouTube, only on the computer, never saves or uploads it, settings may sync through the browser’s sync."},
   "consent_accept": { "message": "Turn on Musicless", "description": "The affirmative choice under the local-audio disclosure." },
   "done_heading": { "message": "Musicless is on", "description": "After consent; also the title when an already-open video needs reloading." },
   "done_step1_title": {"message": "Play any video.", "description": "First next-step title when automatic removal is on."},

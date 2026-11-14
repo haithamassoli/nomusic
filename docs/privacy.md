@@ -17,9 +17,9 @@ recording, media downloads or audio export.
 
 ## Settings and storage
 
-Chrome stores your **Remove music by default** setting and your consent to local
-audio processing, given by choosing **Turn on Musicless**. These may sync between
-your devices through Chrome Sync.
+Your browser stores your **Remove music by default** setting and your consent to
+local audio processing, given by choosing **Turn on Musicless**. These may sync
+between your devices through your browser's sync.
 A random security token stays on this device to prevent web pages from
 connecting to Musicless's audio processor.
 
@@ -44,11 +44,11 @@ purpose. It is not sold or used for advertising, assessing creditworthiness or l
 
 ## Contact
 
-For privacy questions, use the email on the Chrome Web Store listing or
+For privacy questions, use the email on Musicless's store listing or
 <https://github.com/ieasybooks/musicless/issues>. Keep private audio and
 personal information out of public issues.
 
-Last updated: 12 November 2026.
+Last updated: 14 November 2026.
 
 ## العربية
 
@@ -73,8 +73,8 @@ before the store submission. In Arabic the product is called «بلا موسيق
 
 ### الإعدادات والتخزين
 
-يحفظ Chrome إعداد **إزالة الموسيقى افتراضيًا** وموافقتك على معالجة الصوت محليًا
-عند اختيار **تفعيل «بلا موسيقى»**. قد تتم مزامنتهما بين أجهزتك عبر Chrome Sync.
+يحفظ متصفحك إعداد **إزالة الموسيقى افتراضيًا** وموافقتك على معالجة الصوت محليًا
+عند اختيار **تفعيل «بلا موسيقى»**. قد تتم مزامنتهما بين أجهزتك عبر خدمة المزامنة في متصفحك.
 ويبقى رمز أمان عشوائي على هذا الجهاز لمنع صفحات الويب من الاتصال بمعالج الصوت في الإضافة.
 
 عند فتح صفحة التفعيل من فيديو، تُحفظ مؤقتًا معلومات تحدد صفحته ليعيدك إليها
@@ -99,8 +99,8 @@ before the store submission. In Arabic the product is called «بلا موسيق
 
 ### التواصل
 
-للاستفسار عن الخصوصية، استخدم البريد الإلكتروني في صفحة الإضافة على سوق Chrome
-الإلكتروني أو <https://github.com/ieasybooks/musicless/issues>. لا تنشر صوتًا
+للاستفسار عن الخصوصية، استخدم البريد الإلكتروني في صفحة الإضافة على متجر
+الإضافات أو <https://github.com/ieasybooks/musicless/issues>. لا تنشر صوتًا
 خاصًا أو معلومات شخصية في طلبات الدعم العلنية.
 
-آخر تحديث: 12 نوفمبر 2026.
+آخر تحديث: 14 نوفمبر 2026.

@@ -54,7 +54,7 @@ What to expect
 • If a live stream keeps pausing, try watching a little behind the live broadcast.
 
 Your audio stays on your computer
-Musicless uses the audio already loaded by YouTube to remove music during playback. It never uploads, shares or saves that audio. It does not offer recording, media downloads or audio export. No account is needed, and the developer receives no audio, browsing history or usage analytics. Your automatic-removal choice and whether you have turned Musicless on may sync between your devices through Chrome Sync. YouTube still loads the video through its own service.
+Musicless uses the audio already loaded by YouTube to remove music during playback. It never uploads, shares or saves that audio. It does not offer recording, media downloads or audio export. No account is needed, and the developer receives no audio, browsing history or usage analytics. Your automatic-removal choice and whether you have turned Musicless on may sync between your devices through your browser's sync. YouTube still loads the video through its own service.
 
 Free and open source. Code and help: https://github.com/ieasybooks/musicless
 Privacy policy: https://github.com/ieasybooks/musicless/blob/main/docs/privacy.md
