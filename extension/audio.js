@@ -5,6 +5,8 @@
 let context = null;
 const graphs = new WeakMap(); // media element -> its routing, which cannot be undone
 
+const IN_FIREFOX = chrome.runtime.getURL("").startsWith("moz-extension:");
+
 export function audioContext() {
   if (!context) {
     context = new AudioContext({ latencyHint: "playback" });
@@ -34,6 +36,10 @@ export function routeElement(video) {
     output.connect(ctx.destination);
     graph = { ctx, element, original, output };
     graphs.set(video, graph);
+    // Once a playing video is routed, Firefox plays its own sound about
+    // 130 ms ahead of its picture until the next seek, as heard after Restore
+    // original sound. A seek to where it already is keeps the two together.
+    if (IN_FIREFOX && !video.paused && !video.seeking && video.currentTime > 0) video.currentTime = video.currentTime;
   }
   return graph;
 }

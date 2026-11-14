@@ -178,6 +178,11 @@ audio per video.
   resumes the context on the first click or key press.
 - A MessagePort to a worker that has died never reports it, so the engine
   pings a quiet worker and treats no answer within 15 s as a lost engine.
+- In Firefox, once a playing video is routed through Web Audio, the video's
+  own sound plays about 130 ms ahead of its picture until the next seek.
+  Musicless's audio follows the picture, but the original sound comes back
+  after Restore original sound, so in Firefox routing a playing video seeks it
+  to where it already is (`audio.js`).
 - Routing a media element through Web Audio cannot be undone, and a
   cross-origin file routed that way would play silence, so only Media Source
   (blob:) sources are routed; anything else is held instead.
