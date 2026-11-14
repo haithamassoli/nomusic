@@ -19,8 +19,9 @@ Musicless was called nomusic before its first release.
 
 ## Install
 
-Musicless works in Chrome, Edge, Brave and other Chromium browsers on a computer
-(version 111 or newer). It does not run in phone browsers.
+Musicless works on a computer in Chrome, Edge, Brave and other Chromium
+browsers (version 111 or newer), and in Firefox (version 140 or newer). It does
+not run in phone browsers.
 
 ### Chrome Web Store
 
@@ -28,7 +29,14 @@ Install [Musicless from the Chrome Web Store](https://chromewebstore.google.com/
 then reload any YouTube tabs that were already open. The store keeps it up to
 date.
 
+### Firefox Add-ons
+
+Musicless is on its way to Firefox Add-ons, which keeps it up to date. Until
+it is listed there, you can try it from a GitHub Release (below).
+
 ### A GitHub Release
+
+For Chrome, Edge, Brave and other Chromium browsers:
 
 1. Download `musicless-<version>.zip` and `SHA256SUMS` from the
    [releases](https://github.com/ieasybooks/musicless/releases) into the
@@ -36,11 +44,11 @@ date.
 2. Check the file, then the attestation:
 
    ```sh
-   sha256sum -c SHA256SUMS
+   sha256sum -c --ignore-missing SHA256SUMS
    gh attestation verify musicless-<version>.zip --repo ieasybooks/musicless
    ```
 
-   On macOS, `shasum -a 256 -c SHA256SUMS` checks the checksum file.
+   On macOS, `shasum -a 256 -c --ignore-missing SHA256SUMS` checks the checksum file.
 3. Unzip it. Open `chrome://extensions` (in Edge, `edge://extensions`), turn
    on **Developer mode**, click **Load unpacked**, and choose the unzipped
    folder.
@@ -48,6 +56,12 @@ date.
 5. The first time, choose **Turn on Musicless** on the page that opens (or in the
    toolbar popup, under the same words). Until you do, Musicless does not remove
    music; its button on the player opens that page.
+
+Firefox keeps only add-ons that Mozilla has signed, so once Musicless is
+listed, install it from Firefox Add-ons. To try the release's
+`musicless-<version>-firefox.zip` instead, open `about:debugging`, choose
+**This Firefox**, then **Load Temporary Add-on**, and pick the zip. Firefox
+removes it when it closes.
 
 ## Using Musicless
 

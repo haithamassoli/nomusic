@@ -14,8 +14,9 @@ There is no bug bounty.
 
 ## What to include
 
-- The extension version (`chrome://extensions`) and whether it came from
-  the Chrome Web Store or from a GitHub Release zip.
+- The extension version (`chrome://extensions`, or `about:addons` in Firefox)
+  and whether it came from the Chrome Web Store, Firefox Add-ons or a GitHub
+  Release zip.
 - Browser name and version, and the operating system.
 - A YouTube URL, if a video is needed to see the problem.
 - What an attacker can do, and what you have already tried.

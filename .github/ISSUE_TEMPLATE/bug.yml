@@ -24,6 +24,7 @@ body:
         - Microsoft Edge
         - Brave
         - Chromium
+        - Firefox
         - Other (say which in the last box)
     validations:
       required: true
@@ -31,7 +32,7 @@ body:
     id: browser-version
     attributes:
       label: Browser version
-      description: From the browser's About page, or chrome://version.
+      description: From the browser's About page, chrome://version, or about:support in Firefox.
       placeholder: "Example: 131.0.6778.85"
     validations:
       required: true
@@ -51,8 +52,8 @@ body:
     id: extension-version
     attributes:
       label: Musicless version
-      description: chrome://extensions (edge://extensions in Edge).
-      placeholder: "Example: 1.0.0"
+      description: chrome://extensions (edge://extensions in Edge, about:addons in Firefox).
+      placeholder: "Example: 1.1.0"
     validations:
       required: true
   - type: dropdown
@@ -61,6 +62,7 @@ body:
       label: Installed from
       options:
         - Chrome Web Store
+        - Firefox Add-ons
         - A GitHub Release zip (loaded unpacked)
         - Built from source (say the commit in the last box)
         - Other (say where in the last box)

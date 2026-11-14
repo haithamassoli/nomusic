@@ -41,9 +41,16 @@ On Linux, before the tag:
    The recovery dialog offers Try again (or Reload page) and Play original sound;
    a copy-protected video offers only Play original sound.
    The first run asks you to **Turn on Musicless** before it processes a video.
-7. **Package check.** `./scripts/package.sh` writes `dist/musicless-<version>.zip`.
-   Unzip it and run `MUSICLESS_EXTENSION=<folder> QUICK=1 node local.mjs`, then
-   load that folder in a clean profile and play one video. The release zip
+7. **Package check.** `./scripts/package.sh` writes `dist/musicless-<version>.zip`
+   and `dist/musicless-<version>-firefox.zip`, the same files with Firefox's
+   manifest. Unzip the first and run `MUSICLESS_EXTENSION=<folder> QUICK=1 node local.mjs`, then
+   load that folder in a clean profile and play one video.
+   The browser tests run Chrome-family browsers only. Check the Firefox zip
+   with Mozilla's linter, `npx addons-linter@10.15.0 dist/musicless-<version>-firefox.zip`
+   (no errors), then in Firefox: open `about:debugging`, choose **This
+   Firefox**, **Load Temporary Add-on**, and the zip. Turn Musicless on and
+   play a video with speech over music, a seek and a speed change, in English
+   and in Arabic. The release zip
    has no debug recorder and no audio-export path. Confirm the unzipped tree
    before you tag. The workflow builds the zip you will actually upload. This
    local zip is only for the listen pass.
@@ -96,30 +103,30 @@ git push origin "v$version"
 ```
 
 The Release workflow has two jobs. The first runs the unit tests, builds
-`dist/musicless-<version>.zip` with `scripts/package.sh`, and tests the
-unzipped package: the full local suite, interface checks and the memory check
-in Chrome.
-The second, the only one that can write, builds the zip again without
-the test tools, checks that it is the zip the tests ran (same SHA-256),
-writes `SHA256SUMS`, attests the zip and the checksum file, and opens a
-draft GitHub Release. A tag whose name is not `v` plus the manifest version
+both zips with `scripts/package.sh`, and tests the unzipped Chrome package:
+the full local suite, interface checks and the memory check in Chrome.
+The second, the only one that can write, builds the zips again without
+the test tools, checks that they are the zips the first job built (same
+SHA-256), writes `SHA256SUMS`, attests the zips and the checksum file, and
+opens a draft GitHub Release. A tag whose name is not `v` plus the manifest version
 fails.
 
 ## 4. Check the draft, then publish it
 
-Download the draft's zip, `SHA256SUMS`, and attestation file into one folder.
+Download the draft's two zips, `SHA256SUMS`, and attestation file into one folder.
 
 ```sh
 sha256sum -c SHA256SUMS
-gh attestation verify musicless-*.zip --repo ieasybooks/musicless
+for zip in musicless-*.zip; do gh attestation verify "$zip" --repo ieasybooks/musicless; done
 ```
 
 On macOS, `shasum -a 256 -c SHA256SUMS` checks the same file.
 
 Unzip the download and confirm it is the build you listened to: model and
 runtime present, English and Arabic catalogs present, no debug recorder.
-Publish the draft only after that. The attested zip is the file you upload
-below.
+Publish the draft only after that. The attested zips are the files you upload
+below: `musicless-<version>.zip` to Chrome and Edge, and
+`musicless-<version>-firefox.zip` to Firefox.
 
 ## 5. Chrome Web Store
 
@@ -170,17 +177,38 @@ When you publish, install from the store in a clean profile, choose **Turn
 on Musicless**, and play one video. Put the store URL in the README's install
 section, and in the repository homepage, only after the listing is live.
 
-## 6. Edge Add-ons
+## 6. Firefox Add-ons
 
-Upload that same zip, with the same listing text, to the Edge Add-ons
+Open <https://addons.mozilla.org/developers/> with the ieasybooks Mozilla
+account and upload the verified `musicless-<version>-firefox.zip` as a new
+version of Musicless (the first time: **Submit a New Add-on**, **On this
+site**). Choose Firefox on the desktop only: Musicless does not run on
+phones. Its add-on ID, `musicless@ieasybooks` in the Firefox manifest, can
+never change.
+
+Mozilla asks for the source of generated files, and `content.bundle.js` is
+built. Upload the tag's source, `git archive --format=zip -o musicless-<version>-source.zip v<version>`,
+and give this build note: "Run ./setup.sh (Node.js 24 with npm, curl, tar, Python 3), then
+./scripts/package.sh; it writes dist/musicless-<version>-firefox.zip. The model
+and ONNX Runtime files are downloaded and checked against the SHA-256 values in
+tools/dependencies.json." Use the same name, summary, detailed description,
+screenshots and privacy policy as for Chrome ([store listing](store-listing.md));
+its privacy practices and reviewer notes are written for Chrome's dashboard.
+Listed versions go public when Mozilla approves them, sometimes within
+minutes. The first time, put the listing URL in the README's Firefox Add-ons
+section once it is live.
+
+## 7. Edge Add-ons
+
+Upload the Chrome zip, with the same listing text, to the Edge Add-ons
 dashboard.
 
-## 7. Repository settings
+## 8. Repository settings
 
 When setting up or reviewing the repository:
 
-1. **Description.** "Removes the background music from YouTube videos and keeps the voices. A Chrome extension; everything runs on your computer."
-2. **Topics.** `browser-extension`, `chrome-extension`, `chromium`, `webextension`, `youtube`, `privacy`, `onnx`, `webassembly`.
+1. **Description.** "Removes the background music from YouTube videos and keeps the voices. A browser extension; everything runs on your computer."
+2. **Topics.** `browser-extension`, `chrome-extension`, `firefox-addon`, `chromium`, `webextension`, `youtube`, `privacy`, `onnx`, `webassembly`.
 3. **Homepage.** Empty until the Chrome Web Store listing is live, then that listing URL.
 4. **Social preview.** Upload [store/github-social-1280x640.png](store/github-social-1280x640.png), the supplied 1280×640 image with the logo, tagline, quieter product description and faint stave with a gap.
 5. **License.** Confirm the About box says MIT.

@@ -22,6 +22,7 @@ jobs:
       CHROME: /usr/bin/google-chrome
     outputs:
       sha256: ${{ steps.package.outputs.sha256 }}
+      sha256_firefox: ${{ steps.package.outputs.sha256_firefox }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -51,10 +52,14 @@ jobs:
 
       - name: Package
         id: package
+        # The tests run the Chrome zip. The Firefox zip holds the same files with
+        # Firefox's manifest; the release job checks that it builds the same.
         run: |
           ./scripts/package.sh
-          echo "sha256=$(sha256sum dist/musicless-*.zip | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
-          unzip -q dist/musicless-*.zip -d "$RUNNER_TEMP/musicless"
+          version=$(python3 -c 'import json; print(json.load(open("extension/manifest.json"))["version"])')
+          echo "sha256=$(sha256sum "dist/musicless-$version.zip" | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+          echo "sha256_firefox=$(sha256sum "dist/musicless-$version-firefox.zip" | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+          unzip -q "dist/musicless-$version.zip" -d "$RUNNER_TEMP/musicless"
 
       - name: Local interface checks of the package
         working-directory: tests
@@ -68,8 +73,8 @@ jobs:
         working-directory: tests
         run: MUSICLESS_EXTENSION="$RUNNER_TEMP/musicless" MEDIA_SET=synth node memory.mjs
 
-  # Builds the zip again, apart from the test tools, and attests it only if it
-  # is the zip the tests ran.
+  # Builds the zips again, apart from the test tools, and attests them only if
+  # they are the zips the test job built.
   release:
     name: Package, attest, draft release
     needs: test
@@ -95,14 +100,17 @@ jobs:
       - name: Package and SHA-256
         env:
           TESTED: ${{ needs.test.outputs.sha256 }}
+          TESTED_FIREFOX: ${{ needs.test.outputs.sha256_firefox }}
         run: |
           ./scripts/package.sh
+          version=$(python3 -c 'import json; print(json.load(open("extension/manifest.json"))["version"])')
           cd dist
-          sha256sum musicless-*.zip > SHA256SUMS
+          sha256sum "musicless-$version.zip" "musicless-$version-firefox.zip" > SHA256SUMS
           cat SHA256SUMS
-          test "$(cut -d ' ' -f 1 SHA256SUMS)" = "$TESTED"
+          test "$(sha256sum "musicless-$version.zip" | cut -d ' ' -f 1)" = "$TESTED"
+          test "$(sha256sum "musicless-$version-firefox.zip" | cut -d ' ' -f 1)" = "$TESTED_FIREFOX"
 
-      - name: Attest the zip and the checksum file
+      - name: Attest the zips and the checksum file
         id: attest
         uses: actions/attest-build-provenance@v4
         with:
@@ -132,7 +140,8 @@ jobs:
               "## Verify",
               "",
               "    sha256sum -c SHA256SUMS",
-              "    gh attestation verify musicless-*.zip --repo ieasybooks/musicless",
+              f"    gh attestation verify musicless-{version}.zip --repo ieasybooks/musicless",
+              f"    gh attestation verify musicless-{version}-firefox.zip --repo ieasybooks/musicless",
               "",
           ])
           notes = body + "\n" + verify
@@ -152,5 +161,6 @@ jobs:
             --title "$GITHUB_REF_NAME" \
             --notes-file dist/release-notes.md \
             "dist/musicless-${version}.zip" \
+            "dist/musicless-${version}-firefox.zip" \
             dist/SHA256SUMS \
             "dist/musicless-${version}.attestation.json"

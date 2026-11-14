@@ -7,6 +7,7 @@ extension sources, `npm run build` rebuilds `extension/content.bundle.js`;
 packaging always rebuilds it too. Instrumented browser-test copies are rebuilt
 after their test hooks are added. The browser
 tests also need `ffmpeg` and a Chromium browser (Google Chrome by default).
+They do not run Firefox; [releasing](release.md) says how to check the Firefox zip.
 
 ## Choosing checks
 
