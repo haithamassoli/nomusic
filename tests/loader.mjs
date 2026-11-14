@@ -4,10 +4,11 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { launch, newPage, Report, sleep } from "./harness.mjs";
 
 const report = new Report(process.env.REPORT ?? "loader");
-const extension = process.env.MUSICLESS_EXTENSION ?? new URL("../extension/", import.meta.url).pathname;
+const extension = process.env.MUSICLESS_EXTENSION ?? fileURLToPath(new URL("../extension/", import.meta.url));
 const lineNumber = readFileSync(join(extension, "content.bundle.js"), "utf8").split("\n")
   .findIndex(line => line.includes("engine.tidy();"));
 assert(lineNumber >= 0, "update the snapshot breakpoint for the content bundle");

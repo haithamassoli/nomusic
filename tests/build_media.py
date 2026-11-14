@@ -37,10 +37,10 @@ def run(*args):
     subprocess.run(["ffmpeg", "-v", "error", "-y", *args], check=True)
 
 
-def dash(variant, audio_codec, audio_mime, video=True):
+def dash(variant, audio_codec, video_codec=VIDEO):
     folder = out / variant
     folder.mkdir(parents=True, exist_ok=True)
-    maps = ["-map", "0:v:0", "-map", "0:a:0", *VIDEO] if video else ["-map", "0:a:0"]
+    maps = ["-map", "0:v:0", "-map", "0:a:0", *video_codec] if video_codec else ["-map", "0:a:0"]
     run("-i", str(src), *limit, *maps, *audio_codec,
         "-f", "dash", "-seg_duration", "4", "-use_template", "1", "-use_timeline", "1",
         "-init_seg_name", "init-$RepresentationID$.$ext$",
@@ -65,11 +65,10 @@ def dash(variant, audio_codec, audio_mime, video=True):
                 starts.append(t / scale)
                 t += int(s.get("d"))
         ext = "webm" if "webm" in mime else "m4s"
-        init_ext = "webm" if "webm" in mime else "m4s"
         number = int(tmpl.get("startNumber", 1))
         tracks.append({
             "mime": mime,
-            "init": f"init-{rid}.{init_ext}",
+            "init": f"init-{rid}.{ext}",
             "segments": [{"url": f"seg-{rid}-{number + i:05d}.{ext}", "start": st} for i, st in enumerate(starts)],
         })
     (folder / "player.json").write_text(json.dumps({"mode": "segments", "duration": duration, "tracks": tracks}, indent=1))
@@ -99,7 +98,7 @@ if src == "long":
     src = out / "long.wav"
     run("-stream_loop", "-1", "-i", str(piece), "-t", str(minutes * 60), "-c:a", "pcm_s16le", str(src))
     piece.unlink()
-    dash("webm-opus", ["-c:a", "libopus", "-b:a", "128k", "-ar", "48000"], "audio/webm", video=False)
+    dash("webm-opus", ["-c:a", "libopus", "-b:a", "128k", "-ar", "48000"], video_codec=None)
     src.unlink()
     print("built", out)
     sys.exit(0)
@@ -109,14 +108,12 @@ if src == "synthetic":
     synthesize(seconds, src)
 src = Path(src)
 
-dash("webm-opus", ["-c:a", "libopus", "-b:a", "128k", "-ar", "48000"], "audio/webm")
+dash("webm-opus", ["-c:a", "libopus", "-b:a", "128k", "-ar", "48000"])
 # VP9 video for browsers without H.264 (open-source Chromium), as YouTube serves them.
-VIDEO_H264 = VIDEO
-VIDEO = ["-c:v", "libvpx-vp9", "-deadline", "realtime", "-cpu-used", "8", "-b:v", "500k", "-vf", "scale=-2:360",
+VIDEO_VP9 = ["-c:v", "libvpx-vp9", "-deadline", "realtime", "-cpu-used", "8", "-b:v", "500k", "-vf", "scale=-2:360",
          "-force_key_frames", "expr:gte(t,n_forced*4)", "-threads", "2"]
-dash("webm-vp9", ["-c:a", "libopus", "-b:a", "128k", "-ar", "48000"], "audio/webm")
-VIDEO = VIDEO_H264
-dash("mp4-aac", ["-c:a", "aac", "-b:a", "128k", "-ar", "44100"], "audio/mp4")
+dash("webm-vp9", ["-c:a", "libopus", "-b:a", "128k", "-ar", "48000"], video_codec=VIDEO_VP9)
+dash("mp4-aac", ["-c:a", "aac", "-b:a", "128k", "-ar", "44100"])
 
 # Muxed fragmented MP4 without B-frames (clean audio timestamps), and with
 # B-frames, where ffmpeg stretches the first AAC packet over the video's

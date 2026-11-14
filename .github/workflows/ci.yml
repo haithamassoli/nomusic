@@ -48,6 +48,10 @@ jobs:
         run: |
           ./scripts/package.sh
           unzip -q dist/musicless-*.zip -d "$RUNNER_TEMP/musicless"
+      - name: Local interface checks of the package
+        working-directory: tests
+        run: MUSICLESS_EXTENSION="$RUNNER_TEMP/musicless" node interface.mjs
+
       - name: Browser tests of the package on local Media Source pages
         working-directory: tests
         run: MUSICLESS_EXTENSION="$RUNNER_TEMP/musicless" MEDIA_SET=synth QUICK=1 node local.mjs

@@ -3,15 +3,15 @@
 import { createServer } from "node:http";
 import { createReadStream, statSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
-const [mediaDir, port = "8811"] = process.argv.slice(2);
-const siteDir = new URL("./site/", import.meta.url).pathname;
+const siteDir = fileURLToPath(new URL("./site/", import.meta.url));
 const types = {
   ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".json": "application/json",
   ".mp4": "video/mp4", ".m4s": "video/mp4", ".webm": "video/webm", ".mpd": "application/dash+xml",
 };
 
-export function serve(dir = mediaDir, listenPort = Number(port)) {
+export function serve(dir, listenPort = 8811) {
   const server = createServer((req, res) => {
     const path = normalize(decodeURIComponent(new URL(req.url, "http://x").pathname));
     const file = path.startsWith("/media/") ? join(dir, path.slice(7)) : join(siteDir, path.slice(1));
@@ -37,4 +37,8 @@ export function serve(dir = mediaDir, listenPort = Number(port)) {
   return new Promise((resolve) => server.listen(listenPort, "127.0.0.1", () => resolve(server)));
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) serve().then(() => console.log(`serving on ${port}`));
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const [mediaDir, port = "8811"] = process.argv.slice(2);
+  if (!mediaDir) throw new Error("Usage: node serve.mjs <media dir> [port]");
+  serve(mediaDir, Number(port)).then(() => console.log(`serving on ${port}`));
+}

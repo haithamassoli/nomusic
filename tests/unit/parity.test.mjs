@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 import { analyze, synthesize } from "../../extension/dsp.js";
 import { applyFades, STRIDE_SAMPLES, WINDOW_SAMPLES } from "../../extension/grid.js";
 
-const TESTS = new URL("..", import.meta.url).pathname;
+const TESTS = fileURLToPath(new URL("..", import.meta.url));
 const PYTHON = join(TESTS, ".venv", "bin", "python");
 const built = ["model/spleeter-2stems.onnx", "vendor/ort.wasm.min.mjs"].every((file) =>
   existsSync(new URL(`../../extension/${file}`, import.meta.url)));

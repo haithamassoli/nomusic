@@ -3,16 +3,17 @@
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import puppeteer from "puppeteer-core";
 import { buildContent } from "../tools/build-content.mjs";
 import { instrumentExtension } from "./diagnostics/instrument.mjs";
 import { chromePath } from "../tools/chrome.mjs";
 export { chromePath };
 
-const TESTS = new URL(".", import.meta.url).pathname;
+const TESTS = fileURLToPath(new URL(".", import.meta.url));
 export const WORK = process.env.MUSICLESS_TEST_DIR ?? join(TESTS, ".work");
 // MUSICLESS_EXTENSION tests another copy, e.g. an unzipped release package.
-const EXTENSION = process.env.MUSICLESS_EXTENSION ?? new URL("../extension/", import.meta.url).pathname;
+const EXTENSION = process.env.MUSICLESS_EXTENSION ?? fileURLToPath(new URL("../extension/", import.meta.url));
 const ANALYZE = join(TESTS, "analyze.py");
 export const PYTHON = process.env.MUSICLESS_PYTHON ?? join(TESTS, ".venv", "bin", "python");
 const NS = "musicless";
@@ -75,9 +76,12 @@ export async function launch({ headless = true, autoStart = true, autoplay = tru
   };
   browser.process()?.once("exit", cleanup);
   process.once("exit", cleanup);
-  // The welcome page opens on install; tests do not need it.
-  await sleep(500);
-  for (const page of await browser.pages()) if (page.url().includes("welcome.html")) await page.close();
+  // The welcome page opens on install; tests do not need it. Close it once it
+  // has loaded: in Edge, closing it mid-load can leave the extension's later
+  // pages without their messages (they show the catalog keys).
+  const welcome = await (await browser.waitForTarget(target => target.url() === `chrome-extension://${extensionId}/welcome.html`)).page();
+  await welcome.waitForFunction(() => document.readyState === "complete");
+  await welcome.close();
   await setSettings(browser, extensionId, { autoStart, consented });
   return { browser, extensionId };
 }
@@ -117,12 +121,15 @@ export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 export function debugRequest(frame, type, extra = {}) {
   return frame.evaluate(({ NS, type, extra }) => new Promise((resolve) => {
     const id = Math.random().toString(36).slice(2);
-    const timer = setTimeout(() => resolve(undefined), 3000);
+    const finish = (reply) => {
+      clearTimeout(timer);
+      window.removeEventListener("message", onMessage);
+      resolve(reply);
+    };
+    const timer = setTimeout(() => finish(undefined), 3000);
     const onMessage = (event) => {
       if (event.data?.[NS] === "debug-reply" && event.data.id === id) {
-        clearTimeout(timer);
-        window.removeEventListener("message", onMessage);
-        resolve(event.data.reply);
+        finish(event.data.reply);
       }
     };
     window.addEventListener("message", onMessage);
@@ -157,8 +164,8 @@ export async function waitFor(frame, predicate, { timeout = 60000, label = "cond
   throw new Error(`timed out waiting for ${label}; last state ${JSON.stringify(state)?.slice(0, 600)}`);
 }
 
-// A real click on the visible Musicless button; if something on the page covers
-// it (a site dialog), report what, then click it directly so the test goes on.
+// A real click on the visible Musicless button. A covering site dialog is a
+// test failure: synthetic clicks cannot operate the trusted-only controls.
 export async function clickButton(frame) {
   await frame.waitForSelector(".musicless-btn", { visible: true, timeout: 30000 });
   const button = await frame.evaluateHandle(() =>
@@ -173,8 +180,7 @@ export async function clickButton(frame) {
     const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
     return top === el || el.contains(top) ? null : `${top?.tagName?.toLowerCase()}.${[...(top?.classList ?? [])].join(".")}`;
   });
-  if (covered) await button.evaluate((el) => el.click());
-  return { covered_by: covered };
+  if (covered) throw new Error(`Musicless button covered by ${covered}`);
 }
 
 // Choose an action in the recovery dialog by its data-action ("retry" or

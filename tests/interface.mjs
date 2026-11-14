@@ -23,8 +23,11 @@ async function back(welcome) {
     const timer = setTimeout(() => reject(new Error("Back did not close setup")), 10000);
     welcome.once("close", () => { clearTimeout(timer); resolve(); });
   });
-  await welcome.click("#back");
-  await closed;
+  await Promise.all([closed, welcome.click("#back").catch(error => {
+    // Chrome can close setup before replying to mouse-up. The close above must
+    // still occur; unrelated input errors remain failures.
+    if (!error.message.includes("Target closed")) throw error;
+  })]);
 }
 
 async function fromVideo(check) {

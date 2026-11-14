@@ -11,7 +11,6 @@ permissions:
   contents: read
 
 jobs:
-  # The full browser run and the memory check, on the package itself.
   test:
     name: Test the package
     runs-on: ubuntu-24.04
@@ -56,6 +55,10 @@ jobs:
           ./scripts/package.sh
           echo "sha256=$(sha256sum dist/musicless-*.zip | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
           unzip -q dist/musicless-*.zip -d "$RUNNER_TEMP/musicless"
+
+      - name: Local interface checks of the package
+        working-directory: tests
+        run: MUSICLESS_EXTENSION="$RUNNER_TEMP/musicless" node interface.mjs
 
       - name: Browser tests of the package on local Media Source pages
         working-directory: tests

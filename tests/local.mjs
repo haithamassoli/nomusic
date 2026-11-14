@@ -241,13 +241,13 @@ for (const variant of VARIANTS) {
   });
 
   await step(`${tag} turn off restores the original`, async () => {
-    const click = await clickButton(page);
+    await clickButton(page);
     await sleep(1000);
     const state = await frameState(page);
     const { paused } = await videoState(page);
     report.record(`${tag} turn off restores the original`,
       state.status === "off" && state.originalGain === 1 && !paused && state.buttonState === "idle",
-      { status: state.status, original_gain: state.originalGain, playing: !paused, label: state.label, ...click });
+      { status: state.status, original_gain: state.originalGain, playing: !paused, label: state.label });
   });
 
   await step(`${tag} turn back on`, async () => {
@@ -643,6 +643,8 @@ await step("a closed failure dialog comes back on play", async () => {
   await sleep(300);
   const afterEscape = await shown();
   const stood = await videoState(page);
+  // Chrome may settle a paused media clock by less than 1 ms after play/pause.
+  // A real resume must still fail both the paused and clock checks.
   await play(page);
   await sleep(1000);
   const backAfterPlay = await shown();
@@ -656,7 +658,7 @@ await step("a closed failure dialog comes back on play", async () => {
   const backAgain = await shown();
   const icon = await glyph();
   report.record("a closed failure dialog comes back on play",
-    opened && !afterEscape && backAfterPlay && held.paused && held.time === stood.time && !afterScrim && backAgain &&
+    opened && !afterEscape && backAfterPlay && held.paused && Math.abs(held.time - stood.time) <= 0.001 && !afterScrim && backAgain &&
       icon.plain && icon.dot && !icon.struck,
     { opened, after_escape: afterEscape, back_after_play: backAfterPlay, paused_while_held: held.paused, moved_s: held.time - stood.time,
       after_scrim: afterScrim, back_again: backAgain, glyph: icon });
@@ -683,7 +685,7 @@ await step("a failure nothing can help offers only original playback, and a stra
   const state = await frameState(page);
   report.record("a failure nothing can help offers only original playback, and a stray key does not start it",
     dialog.actions.join() === "original" && dialog.main === "original" && dialog.dialog_focused &&
-      after.paused && after.time === before.time && state.status === "failed",
+      after.paused && Math.abs(after.time - before.time) <= 0.001 && state.status === "failed",
     { ...dialog, paused_after_keys: after.paused, moved_s: after.time - before.time, status: state.status });
   await page.close();
 });

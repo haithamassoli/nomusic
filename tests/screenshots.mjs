@@ -13,12 +13,13 @@
 // CHROME, MUSICLESS_NO_SANDBOX and MUSICLESS_TEST_DIR work as in the other suites.
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import puppeteer from "puppeteer-core";
 import { chromePath, setSettings, sleep, WORK } from "./harness.mjs";
 import { buildContent } from "../tools/build-content.mjs";
 
-const OUT = new URL("../docs/store/", import.meta.url).pathname;
-const EXTENSION = new URL("../extension/", import.meta.url).pathname;
+const OUT = fileURLToPath(new URL("../docs/store/", import.meta.url));
+const EXTENSION = fileURLToPath(new URL("../extension/", import.meta.url));
 const VIDEO = "nr5Pj6GQL2o"; // NASA Goddard, "Tour of the Moon in 4K": narration over music
 const START = 20; // seconds in: past the title card
 const LANGUAGES = {

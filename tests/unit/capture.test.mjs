@@ -17,7 +17,6 @@ for (let i = 0; i + 4 <= opus.length; i++) {
 }
 const INIT = opus.subarray(0, starts[0]);
 const CLUSTERS = starts.map((start, i) => opus.subarray(start, starts[i + 1] ?? opus.length));
-const CLUSTER_SECONDS = 3 / CLUSTERS.length; // only used to space repeats apart
 
 // `consented`: the content script's answer, sent at once (null: not yet).
 function sandbox({ streamLimit = 120_000, totalLimit = 400_000, maxEntries = 10000, consented = true } = {}) {
@@ -208,7 +207,6 @@ test("a subscribed stream gets each new append live", () => {
   assert.equal(live.length, 1);
   assert.equal(live[0].entry.segment, "media");
   assert.equal(live[0].entry.bytes.length, CLUSTERS[0].length);
-  assert.ok(CLUSTER_SECONDS > 0);
 });
 
 test("calls the browser refuses are not recorded, and Musicless's own errors never reach the page", () => {
