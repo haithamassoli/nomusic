@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-15
+
+### Added
+
+- Firefox 153 or newer, on a computer. Each release has a Firefox zip,
+  `musicless-<version>-firefox.zip`: the same files with Firefox's manifest.
+
+### Changed
+
+- The first-run disclosure and the privacy policy say that your browser may
+  sync your settings, instead of naming Chrome Sync.
+- The code, tests and documentation were reorganized. Nothing you see or hear
+  changes.
+
+### Fixed
+
+- A speed change goes straight to the voice at its own pitch. Before, the
+  voice was higher pitched for up to a second first.
+- A settings change made while a page was first reading the settings is no
+  longer lost.
+
 ## [1.0.0] - 2026-11-12
 
 First release of the extension. The interface is in English and Arabic.
@@ -51,4 +72,5 @@ First release of the extension. The interface is in English and Arabic.
   choice are stored in Chrome extension storage and may sync through
   Chrome Sync.
 
+[1.1.0]: https://github.com/ieasybooks/musicless/releases/tag/v1.1.0
 [1.0.0]: https://github.com/ieasybooks/musicless/releases/tag/v1.0.0
