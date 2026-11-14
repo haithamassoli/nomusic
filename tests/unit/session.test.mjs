@@ -4,6 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as grid from "../../extension/grid.js";
 import { PlaybackIntent } from "../../extension/playback-intent.js";
+import { StretchedPlayback as Stretched } from "../../extension/stretch.js";
 import { flush, load, plain } from "./sandbox.mjs";
 
 class Video extends EventTarget {
@@ -29,14 +30,21 @@ class Video extends EventTarget {
   }
 }
 
-function sessionSandbox({ video: props, settings = {}, streams = { "blob:a": 1 }, stretch = async (channels) => ({ channels }) } = {}) {
+function sessionSandbox({ video: props, settings = {}, streams = { "blob:a": 1 }, StretchedPlayback = Stretched } = {}) {
   let now = 1000;
   const param = () => ({ value: 1, setTargetAtTime() {}, setValueAtTime() {}, linearRampToValueAtTime() {}, cancelScheduledValues() {} });
   const started = [];
   const ctx = {
     currentTime: 0, state: "running", sampleRate: 48000,
-    createBuffer: (channels, length, rate) => ({ duration: length / rate, length, sampleRate: rate, copyToChannel() {}, getChannelData: () => new Float32Array(length) }),
-    createGain: () => ({ gain: param(), connect() {}, disconnect() {} }),
+    createBuffer: (channels, length, rate) => {
+      const data = Array.from({ length: channels }, () => new Float32Array(length));
+      return {
+        duration: length / rate, length, sampleRate: rate, numberOfChannels: channels,
+        copyToChannel(source, channel) { if (ArrayBuffer.isView(source)) data[channel].set(source.subarray(0, length)); },
+        copyFromChannel(target, channel, from = 0) { target.set(data[channel].subarray(from, from + target.length)); },
+      };
+    },
+    createGain: () => ({ gain: param(), context: ctx, connect() {}, disconnect() {} }),
     createBufferSource: () => {
       const source = { playbackRate: { value: 1 }, connect() {}, disconnect() {}, stop() {}, start: (when, offset) => started.push({ source, when, offset }) };
       return source;
@@ -63,13 +71,11 @@ function sessionSandbox({ video: props, settings = {}, streams = { "blob:a": 1 }
     },
     URL,
     t: (key) => key, // i18n.js: failure messages by key
-    importStretch: async () => ({ stretch }),
+    StretchedPlayback,
   };
   const { settings: preferences, ...globals } = env;
   Object.assign(globals, load("failures.js", { t: env.t }), load("navigation.js", env));
-  const { Session } = load("session.js", globals, {
-    rewrite: (source) => source.replace('import("./stretch.js")', "importStretch()"),
-  });
+  const { Session } = load("session.js", globals);
   const capture = {
     urls: new Map(Object.entries(streams)),
     subscribed: new Map(),
@@ -233,21 +239,72 @@ test("after Retry, a late error or chunk for the earlier attachment does not rea
   assert.equal(session.chunks.size, 1);
 });
 
-test("a failed speed change fails closed, unless the chunk was replaced since", async () => {
-  const pending = [];
-  const { session, engine } = sessionSandbox({ stretch: () => new Promise((resolve, reject) => pending.push(reject)) });
-  engine.deliver({ ...chunk(0), streamId: session.workerId });
-  session.stretch(0, 1.5);
+// A speed change at the playhead.
+async function speedUp(sandbox, rate = 1.5) {
+  sandbox.video.playbackRate = rate;
+  sandbox.video.dispatchEvent(new Event("ratechange"));
   await flush();
-  engine.deliver({ ...chunk(0), streamId: session.workerId }); // made again meanwhile (after a seek, say)
-  pending.shift()(new Error("stretch failed"));
-  await flush();
-  assert.equal(session.failure, null);
-  session.stretch(0, 1.5);
-  await flush();
-  pending.shift()(new Error("stretch failed"));
-  await flush();
-  assert.equal(session.failure?.reason, "error");
+}
+
+test("a speed change plays the voice stretched from where playback is, at once and at its own pitch", async () => {
+  const sandbox = sessionSandbox({ video: { currentTime: 30 } });
+  const { session, engine, started } = sandbox;
+  const k = grid.chunkIndex(30);
+  engine.deliver({ ...chunk(k), streamId: session.workerId });
+  session.tick();
+  const before = started.length;
+  await speedUp(sandbox);
+  const playback = session.sources.get(k);
+  assert.ok(playback?.fill, "a stretched playback");
+  const after = started.slice(before);
+  assert.ok(after.length >= 2, "its first slices are made at once");
+  assert.ok(after.every(({ source }) => source.playbackRate.value === 1), "no sped-up, higher-pitched stand-in");
+  assert.ok(Math.abs(after[0].when - 0.01) < 1e-9, `from now, ${after[0].when}`);
+  // From the playhead: what is left of the chunk, at 1.5x.
+  const left = grid.WINDOW_SAMPLES - Math.round((30 + 0.01 * 1.5 - grid.chunkStart(k)) * grid.RATE);
+  assert.equal(playback.target, Math.ceil(left / 1.5));
+  assert.deepEqual(plain(session.snapshot().stretched), [`${k}:1.5`]);
+});
+
+test("stretched audio is made as playback nears it, a little each tick", async () => {
+  const time = grid.chunkStart(2) + 0.5; // with most of the chunk to come
+  const sandbox = sessionSandbox({ video: { currentTime: time } });
+  const { session, engine, ctx } = sandbox;
+  const k = grid.chunkIndex(time);
+  engine.deliver({ ...chunk(k), streamId: session.workerId });
+  session.tick();
+  await speedUp(sandbox);
+  const playback = session.sources.get(k);
+  const made = playback.made;
+  session.tick();
+  assert.ok(playback.next >= 2.5, `made ahead of the clock, to ${playback.next}`);
+  assert.ok(playback.made > made);
+  ctx.currentTime = 2;
+  session.tick();
+  assert.ok(playback.next >= 4.5, `and further as the clock moves, to ${playback.next}`);
+  assert.ok(playback.next < 4.5 + 0.38, "but not much further");
+});
+
+test("a speed change that cannot be stretched fails closed", async () => {
+  class StretchedPlayback {
+    constructor() { throw new Error("no stretch"); }
+  }
+  const sandbox = sessionSandbox({ video: { currentTime: 30 }, StretchedPlayback });
+  sandbox.engine.deliver({ ...chunk(grid.chunkIndex(30)), streamId: sandbox.session.workerId });
+  sandbox.session.tick();
+  await speedUp(sandbox);
+  assert.equal(sandbox.session.failure?.reason, "error");
+});
+
+test("without pitch correction the chunk plays sped up, as the page's own audio would", async () => {
+  const sandbox = sessionSandbox({ video: { currentTime: 30, preservesPitch: false } });
+  const { session, engine, started } = sandbox;
+  const k = grid.chunkIndex(30);
+  engine.deliver({ ...chunk(k), streamId: session.workerId });
+  session.tick();
+  await speedUp(sandbox);
+  assert.equal(session.sources.get(k).fill, undefined);
+  assert.equal(started.at(-1).source.playbackRate.value, 1.5);
 });
 
 test("a chunk ahead that starts late (made after a seek) is asked for again, and the video holds before it", () => {

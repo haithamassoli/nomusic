@@ -16,6 +16,7 @@ import { chunkIndex, chunkStart, OVERLAP_SAMPLES, RATE } from "./grid.js";
 import { createFailure } from "./failures.js";
 import { reloadPage } from "./navigation.js";
 import { PlaybackIntent } from "./playback-intent.js";
+import { StretchedPlayback } from "./stretch.js";
 
 const AHEAD = 6; // chunks kept ready ahead of the playhead
 const BEHIND = 2;
@@ -30,6 +31,10 @@ const SLEEP_MS = 2 * 60 * 1000; // paused, ended or muted this long: let the eng
 const AUDIO_START_MS = 3000; // after the user's click, the sound starts well within this
 const FADE_SECONDS = 0.004; // time constant of the fade when playback stops
 const OVERLAP_SECONDS = OVERLAP_SAMPLES / RATE;
+// Time-stretched audio (speeds other than 1) is made this far ahead of the
+// context's clock: timers run at least once a second even in background tabs.
+const STRETCH_AHEAD = 2.5;
+const STRETCH_FIRST = 0.75; // made at once when it starts: well past the next tick
 
 // Test diagnostics, only in the test harness's copy of the extension: it marks
 // its manifest, which no page can change.
@@ -52,11 +57,6 @@ function sourceOf(video) {
   return objectNames.get(video.srcObject);
 }
 
-// Pitch-preserving time-stretch for playback rates other than 1 (SoundTouch
-// WSOLA), loaded on first use and shared by every session on the page.
-let stretcher = null;
-const loadStretcher = () => (stretcher ??= import("./stretch.js").then((module) => module.stretch));
-
 export class Session {
   constructor(video, { capture, engine, settings, onChange = () => {} }) {
     this.video = video;
@@ -69,9 +69,9 @@ export class Session {
     this.status = "off";
     this.graph = null;
     this.bus = null; // gain node of the current playback run, faded out on stop
-    this.chunks = new Map(); // k -> { buffer, validFrom, cut, print, stretched?, stretching? }
+    this.chunks = new Map(); // k -> { buffer, validFrom, cut, print }
     this.unchecked = new Set(); // chunks kept from an earlier worker, until the current one checked them
-    this.sources = new Map(); // k -> AudioBufferSourceNode
+    this.sources = new Map(); // k -> AudioBufferSourceNode, or a StretchedPlayback (stretch.js)
     this.requested = null; // the last request sent to the worker
     this.anchor = null;
     this.sourceUrl = null;
@@ -431,31 +431,19 @@ export class Session {
     if (k < chunkIndex(Math.max(0, time - OVERLAP_SECONDS)) || k > chunkIndex(time) + 2) return;
     const { rate } = this.anchor;
     // Like the page's own audio, keep the voice's pitch when sped up or slowed down.
-    let buffer = chunk.buffer;
-    let sourceRate = rate;
-    let interim = false;
-    if (rate !== 1 && this.video.preservesPitch !== false) {
-      if (chunk.stretched?.rate === rate) {
-        buffer = chunk.stretched.buffer;
-        sourceRate = 1;
-      } else {
-        // Until the pitch-preserving version is ready, play this one sped up
-        // (briefly higher pitched) rather than leave a gap.
-        this.stretch(k, rate);
-        interim = true;
-      }
-    }
+    const stretched = rate !== 1 && this.video.preservesPitch !== false;
     const ctx = this.graph.ctx;
     const now = ctx.currentTime + 0.01;
     // Before validFrom the chunk holds no captured audio: it starts there.
     const lead = Math.max(0, chunk.validFrom - chunkStart(k)) / rate;
     let when = this.anchor.ctx + (chunkStart(k) - this.anchor.media) / rate + lead;
-    let offset = lead * sourceRate;
+    let offset = lead * rate; // seconds into the chunk
     if (when < now) {
-      offset += (now - when) * sourceRate;
+      offset += (now - when) * rate;
       when = now;
     }
-    if (offset >= buffer.duration) return;
+    if (offset >= chunk.buffer.duration) return;
+    if (stretched && when > now + STRETCH_AHEAD) return; // made when playback nears it (tick)
     if (!this.bus) {
       // Each playback run fades in, so re-anchoring crossfades instead of cutting.
       this.bus = ctx.createGain();
@@ -463,18 +451,38 @@ export class Session {
       this.bus.gain.linearRampToValueAtTime(1, when + 0.01);
       this.bus.connect(this.graph.output);
     }
-    const source = ctx.createBufferSource();
-    source.buffer = buffer;
-    source.playbackRate.value = sourceRate;
-    source.connect(this.bus);
-    source.start(when, offset);
-    this.trace({ e: "start", k, in: +(when - ctx.currentTime).toFixed(3), offset: +offset.toFixed(3), dur: +buffer.duration.toFixed(3), sourceRate, valid: chunk.validFrom });
-    source.interim = interim;
+    let source;
+    if (stretched) {
+      // Made from where playback is, a slice at a time: the first slices now.
+      try {
+        source = new StretchedPlayback(chunk.buffer, offset, rate, when, this.bus);
+        source.fill(now + STRETCH_FIRST);
+      } catch (error) {
+        this.fail("error", `speed change failed: ${error.message}`);
+        return;
+      }
+    } else {
+      source = ctx.createBufferSource();
+      source.buffer = chunk.buffer;
+      source.playbackRate.value = rate;
+      source.connect(this.bus);
+      source.start(when, offset);
+    }
+    this.trace({ e: "start", k, in: +(when - ctx.currentTime).toFixed(3), offset: +offset.toFixed(3), dur: +chunk.buffer.duration.toFixed(3), rate, stretched, valid: chunk.validFrom });
     this.sources.set(k, source);
     source.onended = () => {
       if (this.sources.get(k) === source) this.sources.delete(k);
     };
     if (DEBUG && this.stats.firstAudioMs === null) this.stats.firstAudioMs = performance.now() - this.stats.started;
+  }
+
+  // Make time-stretched audio up to STRETCH_AHEAD past the context's clock.
+  fillStretched() {
+    try {
+      for (const source of this.sources.values()) source.fill?.(this.graph.ctx.currentTime + STRETCH_AHEAD);
+    } catch (error) {
+      this.fail("error", `speed change failed: ${error.message}`);
+    }
   }
 
   unschedule(k) {
@@ -487,32 +495,6 @@ export class Session {
     }
     source.disconnect();
     this.sources.delete(k);
-  }
-
-  stretch(k, rate) {
-    const chunk = this.chunks.get(k);
-    if (!chunk || chunk.stretching === rate) return;
-    chunk.stretching = rate;
-    const channels = [chunk.buffer.getChannelData(0), chunk.buffer.getChannelData(1)];
-    loadStretcher()
-      .then((stretch) => stretch(channels, rate, chunk.buffer.sampleRate))
-      .then(({ channels: out }) => {
-        if (this.chunks.get(k) !== chunk || chunk.stretching !== rate) return;
-        const buffer = this.graph.ctx.createBuffer(2, out[0].length, chunk.buffer.sampleRate);
-        buffer.copyToChannel(out[0], 0);
-        buffer.copyToChannel(out[1] ?? out[0], 1);
-        chunk.stretched = { rate, buffer };
-        chunk.stretching = null;
-        if (this.anchor?.rate !== rate) return;
-        // Swap a sped-up stand-in for the stretched version from the same point.
-        if (this.sources.get(k)?.interim) this.unschedule(k);
-        this.schedule(k);
-      })
-      .catch((error) => {
-        if (this.chunks.get(k) !== chunk) return; // replaced since (a new source, a seek)
-        chunk.stretching = null;
-        this.fail("error", `speed change failed: ${error.message}`);
-      });
   }
 
   // Whether chunk k has audio from `time` on (one made after a seek starts late).
@@ -654,7 +636,9 @@ export class Session {
     } else if (!video.paused && !video.seeking) {
       if (!this.anchor) this.resync();
       else {
-        for (let i = k; i <= k + 2; i++) this.schedule(i);
+        // The drift first: the page holds video.currentTime still within a
+        // task while the audio clock moves on, so time spent making audio
+        // before reading both would look like drift.
         const expected = this.anchor.media + (this.graph.ctx.currentTime - this.anchor.ctx) * this.anchor.rate;
         const drift = video.currentTime - expected;
         if (DEBUG) {
@@ -673,6 +657,9 @@ export class Session {
           if (steady) this.steadyAt = performance.now();
           this.trace({ e: "drift", ms: Math.round(drift * 1000), steady });
           this.resync();
+        } else {
+          for (let i = k; i <= k + 2; i++) this.schedule(i);
+          this.fillStretched();
         }
       }
     }
@@ -722,7 +709,7 @@ export class Session {
       worker: this.workerStats ?? null,
       scheduled: [...this.sources.keys()],
       events: this.events.slice(-60),
-      stretched: [...this.chunks].filter(([, c]) => c.stretched || c.stretching).map(([k, c]) => `${k}:${c.stretched?.rate ?? "-"}/${c.stretching ?? "-"}`),
+      stretched: [...this.sources].filter(([, source]) => source.fill).map(([k, source]) => `${k}:${source.rate}`),
     };
   }
 }

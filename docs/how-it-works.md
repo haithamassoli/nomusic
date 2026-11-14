@@ -33,7 +33,7 @@ video plays, and plays them in place of the original track.
 | `failures.js`, `navigation.js` | Failure messages and recovery actions in one policy; position-preserving page reloads shared by recovery and Back to the video. |
 | `player-glyph.js` | Geometry shared by the player button and the static glyph generator in `tools/icons.mjs`. |
 | `grid.js` | The model's numbers and the fixed window grid, shared by both sides (`tests/reference.py` mirrors them). |
-| `stretch.js`, `third_party/soundtouch` | Pitch-preserving time-stretch for speeds other than 1x. |
+| `stretch.js`, `third_party/soundtouch` | Pitch-preserving time-stretch for speeds other than 1x, made a slice at a time from where playback is. |
 | `popup.*`, `welcome.*`, `background.js`, `settings.js` | The toolbar popup, the first-run page, and the stored values: the automatic-removal setting and whether the user chose **Turn on Musicless** (`chrome.storage.sync`), the frame's token (`chrome.storage.local`), and the tab/frame/document identifiers for **Back to the video**, cleared on return or browser-session end (`chrome.storage.session`). |
 
 ## Where to make a change
@@ -95,8 +95,13 @@ steady offset beyond 15 ms for two seconds re-anchors too (at most every 20 s;
 an anchor taken just before the audio device restarts can be a little early).
 A clock that stops (stall, buffering) stops the voices, a paused or reset video
 never has audio scheduled, and a rate change re-anchors at the new speed with
-SoundTouch keeping the pitch. Each playback run fades in over 10 ms and out
-over a few milliseconds, so re-anchoring crossfades instead of clicking.
+SoundTouch keeping the pitch. The stretched voice is made from where playback
+is, in slices of about 0.4 s from one continuous stretch: the first 0.75 s at
+once, so a speed change goes straight to the voice at its own pitch, then up
+to 2.5 s ahead, a little each tick. Neighbouring slices share
+6 ms, crossfaded, so they join without a seam. Each playback run fades
+in over 10 ms and out over a few milliseconds, so re-anchoring crossfades
+instead of clicking.
 
 When the chunk the playhead needs is not ready, Musicless pauses the video
 ("holds" it) rather than let music play. It resumes once at least three
@@ -183,6 +188,9 @@ audio per video.
   Musicless's audio follows the picture, but the original sound comes back
   after Restore original sound, so in Firefox routing a playing video seeks it
   to where it already is (`audio.js`).
+- Once an audio buffer plays, Firefox detaches the arrays `getChannelData`
+  gave for it (Web Audio's "acquire the content"; Chrome does not). The
+  stretch takes its own copy of a chunk with `copyFromChannel` (`stretch.js`).
 - Routing a media element through Web Audio cannot be undone, and a
   cross-origin file routed that way would play silence, so only Media Source
   (blob:) sources are routed; anything else is held instead.
