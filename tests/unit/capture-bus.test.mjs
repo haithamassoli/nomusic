@@ -2,6 +2,7 @@
 // messages, so only well-formed ones reach a session (and the worker).
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { runInNewContext } from "node:vm";
 import { load } from "./sandbox.mjs";
 
 function bus() {
@@ -33,10 +34,23 @@ test("well-formed entries pass on with only the fields Musicless reads", () => {
   assert.equal(received[1].length, 3);
 });
 
+// Firefox hands the content script the page's own copy of a posted message.
+test("bytes made in another realm pass, as in Firefox", () => {
+  const { capture, received } = bus();
+  const bytes = runInNewContext("new Uint8Array([1, 2, 3])");
+  assert.equal(bytes instanceof Uint8Array, false);
+  capture.receive({ type: "event", streamId: 5, entry: append({ bytes }) });
+  assert.equal(received.length, 1);
+  assert.deepEqual([...received[0][0].bytes], [1, 2, 3]);
+});
+
 test("malformed messages are dropped", () => {
   const { capture, received } = bus();
   capture.receive({ type: "event", streamId: 5, entry: append({ bytes: new Uint8Array(new ArrayBuffer(4096), 8, 3) }) }); // a view of a bigger buffer
   capture.receive({ type: "event", streamId: 5, entry: append({ bytes: [1, 2, 3] }) });
+  capture.receive({ type: "event", streamId: 5, entry: append({ bytes: new Int8Array(3) }) });
+  capture.receive({ type: "event", streamId: 5, entry: append({ bytes: new Uint8Array(new SharedArrayBuffer(3)) }) });
+  capture.receive({ type: "event", streamId: 5, entry: append({ bytes: { [Symbol.toStringTag]: "Uint8Array", buffer: new ArrayBuffer(3), byteOffset: 0, byteLength: 3, length: 3 } }) });
   capture.receive({ type: "event", streamId: 5, entry: append({ offset: Number.NaN }) });
   capture.receive({ type: "event", streamId: 5, entry: append({ segment: "other" }) });
   capture.receive({ type: "event", streamId: 5, entry: append({ bufferId: -1 }) });

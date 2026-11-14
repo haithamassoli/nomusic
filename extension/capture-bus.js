@@ -15,6 +15,10 @@ const MAX_URLS = 256;
 const SEGMENTS = new Set(["init", "media", "part"]);
 
 const isId = (value) => Number.isSafeInteger(value) && value > 0;
+// Type checks that also hold for another realm's objects: Firefox gives the
+// content script the page's own copies of posted messages, and those fail
+// `instanceof` against the content script's Uint8Array.
+const typeOf = (value) => Object.prototype.toString.call(value);
 
 // A copy of a captured entry with only what Musicless reads, or null if it is malformed.
 export function cleanEntry(entry) {
@@ -29,8 +33,8 @@ export function cleanEntry(entry) {
     case "append": {
       const { bytes, offset, segment } = entry;
       // Its own whole buffer: the buffer is what moves on to the worker.
-      const whole = bytes instanceof Uint8Array && bytes.buffer instanceof ArrayBuffer && bytes.byteOffset === 0 &&
-        bytes.byteLength === bytes.buffer.byteLength;
+      const whole = ArrayBuffer.isView(bytes) && typeOf(bytes) === "[object Uint8Array]" &&
+        typeOf(bytes.buffer) === "[object ArrayBuffer]" && bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength;
       return whole && bytes.length <= MAX_ENTRY_BYTES && Number.isFinite(offset) && SEGMENTS.has(segment)
         ? { kind, bufferId, bytes, offset, segment } : null;
     }
