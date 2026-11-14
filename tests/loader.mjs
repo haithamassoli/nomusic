@@ -1,11 +1,17 @@
 // Live regression for Chrome's extension-module origin warnings after reload.
 // Inspect the uninstrumented bundle through DevTools; no test hooks are shipped.
 // Usage: node loader.mjs (MUSICLESS_EXTENSION can select an unzipped package).
+// Chrome only: the warnings are Chrome's, and so is DevTools.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { launch, newPage, Report, sleep } from "./harness.mjs";
+import { FIREFOX, launch, newPage, Report, sleep, useWindowedUserAgent } from "./harness.mjs";
+
+if (FIREFOX) {
+  console.log("loader.mjs checks warnings only Chrome gives: run it without FIREFOX.");
+  process.exit(0);
+}
 
 const report = new Report(process.env.REPORT ?? "loader");
 const extension = process.env.MUSICLESS_EXTENSION ?? fileURLToPath(new URL("../extension/", import.meta.url));
@@ -23,7 +29,7 @@ async function step(name, fn) {
 
 async function open() {
   page = await newPage(browser);
-  await page.setUserAgent((await browser.userAgent()).replace("HeadlessChrome", "Chrome"));
+  await useWindowedUserAgent(page);
   const client = await page.createCDPSession();
   await client.send("Log.enable");
   client.on("Log.entryAdded", ({ entry }) => {
@@ -121,6 +127,6 @@ try {
   report.save();
   await browser.close();
 }
-const failed = report.rows.filter(row => !row.ok).length;
-console.log(`\n${report.rows.length - failed}/${report.rows.length} passed`);
+const { failed, text } = report.summary();
+console.log(`\n${text}`);
 process.exitCode = failed ? 1 : 0;

@@ -6,8 +6,8 @@ installs the test tools (`tests/node_modules`, `tests/.venv`). After editing the
 extension sources, `npm run build` rebuilds `extension/content.bundle.js`;
 packaging always rebuilds it too. Instrumented browser-test copies are rebuilt
 after their test hooks are added. The browser
-tests also need `ffmpeg` and a Chromium browser (Google Chrome by default).
-They do not run Firefox; [releasing](release.md) says how to check the Firefox zip.
+tests also need `ffmpeg` and a browser: a Chromium browser (Google Chrome by
+default), or Firefox 140 or newer.
 
 ## Choosing checks
 
@@ -27,10 +27,19 @@ Build the sets as described below.
 
 `CHROME=/path/to/browser` selects Chrome, Edge, Brave or Chromium. Set
 `MUSICLESS_NO_SANDBOX=1` for portable browsers or containers that cannot run
-Chrome's sandbox. For concurrent local runs, choose separate `PORT` values
-and work folders; interface selects a free port by default. The memory, soak,
-YouTube, controls and screenshot scripts currently use fixed ports or live
-pages and should be run separately.
+Chrome's sandbox. `FIREFOX=/path/to/firefox` runs the same suites in Firefox
+(through WebDriver BiDi), installing the extension with Firefox's manifest
+(`tools/firefox-manifest.mjs`, which packaging uses too). Firefox takes the
+extension's language from its own, so the Arabic checks need an Arabic
+Firefox: `FIREFOX_AR=/path/to/it`. A step a browser cannot run (Media Source
+in a worker, in Firefox) is reported as skipped. In Firefox, Musicless's sound
+may be 45 ms from the video's own sound rather than 30 ms, and vary by 45 ms
+rather than 40 (see `LAG_LIMIT_MS` in `harness.mjs`). `loader.mjs` checks
+warnings only Chrome gives, and the store screenshots come from Chrome. For
+concurrent local runs, choose separate `PORT` values and work folders;
+interface selects a free port by default. The memory, soak, YouTube, controls
+and screenshot scripts currently use fixed ports or live pages and should be
+run separately.
 
 ## Unit tests
 
@@ -77,7 +86,8 @@ mute, autoplay, hide its Media Source in another frame or a worker, and play
 ClearKey-encrypted media. The suite installs the extension in a fresh profile
 with hooks from `tests/diagnostics/instrument.mjs` added to its own copy
 of the extension. `tests/diagnostics/recorder.js` records the page's audio and
-Musicless's output on the same clock; the state hooks let tests inspect
+Musicless's output on the same clock, through an AudioWorklet that says when
+each block was rendered; the state hooks let tests inspect
 Musicless's playback and workers. The release has neither. `analyze.py` then
 checks sync (against Spleeter run offline),
 dropouts and gaps (against 1x Spleeter of the exact source, at the media time
@@ -118,7 +128,7 @@ with it on over the same 12 minutes.)
 node interface.mjs                  # optional argument: /path/to/test-media
 ```
 
-Focused checks in real Chrome, using local media and no live YouTube: returning
+Focused checks in a real browser, using local media and no live YouTube: returning
 from setup while the video is muted, leaving replacement documents alone
 (including after Back/Forward-cache restoration), reloading only the requesting
 frame of an embedded player,

@@ -5,7 +5,7 @@
 // wraps its captions button; on Shorts it joins the Short's own buttons; in an
 // embedded player it joins the top row of buttons. YouTube changes its player
 // often: run this when it does. Usage (from tests/): node controls.mjs
-import { frameState, launch, newPage, Report, sleep, waitFor, WORK } from "./harness.mjs";
+import { frameState, launch, newPage, Report, sleep, useWindowedUserAgent, waitFor, WORK } from "./harness.mjs";
 import { serve } from "./serve.mjs";
 
 const report = new Report(process.env.REPORT ?? "controls");
@@ -42,7 +42,7 @@ const button = (frame) => frame.evaluate(() => {
 });
 
 const page = await newPage(browser);
-await page.setUserAgent((await browser.userAgent()).replace("HeadlessChrome", "Chrome"));
+await useWindowedUserAgent(page);
 const player = () => page.evaluate(() => {
   const r = document.querySelector("#movie_player").getBoundingClientRect();
   return { x: r.left, y: r.top, width: r.width, height: r.height };
@@ -205,7 +205,7 @@ await step("when YouTube wraps its captions button, the button stays in the bar"
 // top (captions, menu, fullscreen), shows and hides with it, and works.
 await step("on Shorts the button joins the Short's own buttons, and shows and hides with them", async () => {
   const shorts = await newPage(browser);
-  await shorts.setUserAgent((await browser.userAgent()).replace("HeadlessChrome", "Chrome"));
+  await useWindowedUserAgent(shorts);
   await shorts.goto("https://www.youtube.com/shorts/", { waitUntil: "domcontentloaded" });
   await shorts.waitForSelector("#shorts-player video", { timeout: 30000 });
   await shorts.waitForSelector("#right-controls .musicless-btn", { timeout: 30000 });
@@ -266,8 +266,8 @@ await step("in an embedded player it joins the top row of buttons", async () => 
 });
 
 report.save();
-const failed = report.rows.filter((row) => !row.ok).length;
-console.log(`\n${report.rows.length - failed}/${report.rows.length} passed`);
+const { failed, text } = report.summary();
+console.log(`\n${text}`);
 await browser.close();
 server.close();
 process.exit(failed ? 1 : 0);

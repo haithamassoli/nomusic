@@ -2,7 +2,7 @@
 # Package the extension for release: dist/musicless-<version>.zip, the archive
 # to upload to the Chrome Web Store (and Edge Add-ons) or to share for "Load
 # unpacked", and dist/musicless-<version>-firefox.zip for Firefox Add-ons: the
-# same files with Firefox's manifest (see firefox_manifest below).
+# same files with Firefox's manifest (tools/firefox-manifest.mjs).
 # Run ./setup.sh first: the model and the runtime are built, not committed.
 # The zip holds the files git tracks in extension/ plus the built files,
 # so nothing else in the folder can slip in. In a source archive (git
@@ -41,26 +41,6 @@ model = hashlib.sha256(open("extension/model/spleeter-2stems.onnx", "rb").read()
 if model != expected:
     sys.exit(f"extension/model/spleeter-2stems.onnx is not the model setup.sh builds (sha256 {model}).")
 
-# Firefox runs background.scripts (an event page) where Chrome runs the
-# service worker. It needs an add-on ID, which can never change once on Firefox
-# Add-ons, and new add-ons declare what data they collect: none. 140 is the
-# first Firefox with that declaration; main-world content scripts (128) and
-# WebCodecs audio decoding (130) came before it.
-def firefox_manifest(chrome):
-    firefox = {}
-    for key, value in chrome.items():
-        if key == "minimum_chrome_version":
-            continue
-        if key == "background":
-            value = {"scripts": [value["service_worker"]], "type": value["type"]}
-        firefox[key] = value
-    firefox["browser_specific_settings"] = {"gecko": {
-        "id": "musicless@ieasybooks",
-        "strict_min_version": "140.0",
-        "data_collection_permissions": {"required": ["none"]},
-    }}
-    return (json.dumps(firefox, indent=2, ensure_ascii=False) + "\n").encode()
-
 def package(out, manifest_json=None):
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
         for name in files:
@@ -82,5 +62,8 @@ os.makedirs("dist", exist_ok=True)
 unpacked = sum(os.path.getsize(os.path.join("extension", name)) for name in files) / 2**20
 print(f"{len(files)} files, {unpacked:.1f} MiB unpacked")
 package(f"dist/musicless-{version}.zip")
-package(f"dist/musicless-{version}-firefox.zip", firefox_manifest(manifest))
+# Firefox's manifest comes from tools/firefox-manifest.mjs, which the browser
+# tests use too.
+package(f"dist/musicless-{version}-firefox.zip", subprocess.run(
+    ["node", "tools/firefox-manifest.mjs", "extension/manifest.json"], check=True, capture_output=True).stdout)
 PY

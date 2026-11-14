@@ -2,7 +2,7 @@
 // drift, holds and resyncs every minute, then checks sync at the end. Memory
 // must stay flat (bounded capture and worker buffers) and sync must not drift.
 // Usage: node soak.mjs [minutes] [media dir]   (build_media.py long first)
-import { analyze, dump, frameState, launch, memoryOfChrome, newPage, Report, sleep, waitFor, WORK } from "./harness.mjs";
+import { analyze, dump, frameState, launch, memoryOfBrowser, newPage, Report, sleep, waitFor, WORK } from "./harness.mjs";
 import { serve } from "./serve.mjs";
 
 const minutes = Number(process.argv[2] ?? 20);
@@ -26,7 +26,7 @@ for (let minute = 1; minute <= minutes; minute++) {
   samples.push({
     minute, position_s: Math.round(s.currentTime), status: s.status, holds: s.holds, resyncs: s.resyncs,
     max_drift_ms: Math.max(...drift.map(Math.abs)), capture_mb: capture === null ? null : +(capture / 2 ** 20).toFixed(1),
-    worker_mb: s.worker ? +(s.worker.bytes / 2 ** 20).toFixed(1) : null, ...memoryOfChrome(browser),
+    worker_mb: s.worker ? +(s.worker.bytes / 2 ** 20).toFixed(1) : null, ...memoryOfBrowser(browser),
   });
   console.log(JSON.stringify(samples.at(-1)));
 }

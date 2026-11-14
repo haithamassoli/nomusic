@@ -15,8 +15,13 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, write
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import puppeteer from "puppeteer-core";
-import { chromePath, setSettings, sleep, WORK } from "./harness.mjs";
+import { chromePath, FIREFOX, setSettings, sleep, WORK } from "./harness.mjs";
 import { buildContent } from "../tools/build-content.mjs";
+
+if (FIREFOX) {
+  console.log("The store images come from Chrome: run screenshots.mjs without FIREFOX.");
+  process.exit(0);
+}
 
 const OUT = fileURLToPath(new URL("../docs/store/", import.meta.url));
 const EXTENSION = fileURLToPath(new URL("../extension/", import.meta.url));

@@ -4,10 +4,12 @@
 // Usage: node local.mjs [media dir]
 //   MEDIA_SET=vlog|synth  which media set under the media dir to play (default vlog)
 //   QUICK=1               the WebM/Opus page only, without the long-running scenarios
-//   CHROME=/path/to/browser, REPORT=name, VARIANTS=webm-opus,mp4-aac
+//   CHROME=/path/to/browser, or FIREFOX=/path/to/firefox (and FIREFOX_AR, see harness.mjs)
+//   REPORT=name, VARIANTS=webm-opus,mp4-aac
 import {
-  analyze, chooseRecovery, clickButton, debugRequest, dump, frameState, launch, memoryOfChrome, newPage, Report, setAutoStart,
-  setSettings, sleep, waitFor, WORK,
+  analyze, chooseRecovery, clickButton, closes, debugRequest, dump, evaluateAsUser, extensionUrl, frameState, gotoExtensionPage, launch,
+  LAG_LIMIT_MS, LAG_SPREAD_LIMIT_MS, memoryOfBrowser, newPage, readWithoutActivation, Report, setAutoStart, setSettings, sleep, uninstall, until,
+  waitFor, waitForExtensionPage, WORK,
 } from "./harness.mjs";
 import { existsSync, readFileSync } from "node:fs";
 import { serve } from "./serve.mjs";
@@ -31,6 +33,8 @@ const videoState = (page) => page.evaluate(() => {
   return { paused: v.paused, time: v.currentTime, muted: v.muted };
 });
 const isOn = (s) => s.status === "on" && !s.holding;
+// In one of the extension's pages: whether the user has turned Musicless on.
+const isConsented = () => chrome.storage.sync.get("consented").then((stored) => stored.consented === true);
 const engineFrames = (page) => page.evaluate(() => document.querySelectorAll('iframe[src*="separator.html"]').length);
 const audioFile = (variant) => `${MEDIA}/${SET}/${variant}/audio.${variant.startsWith("webm") ? "webm" : "mp4"}`;
 
@@ -67,7 +71,7 @@ async function listen(page, name, seconds) {
 // of it at media time (the extension's own windows; Spleeter's output depends on
 // where its windows fall, so a reference cut from the recording disagrees in places).
 const good = (a) => (a.over_silence ?? 0) === 0 && ((a.windows === 0 && a.reference_db < -40 && a.output_db < -40) ||
-  (a.windows > 0 && Math.abs(a.lag_ms) <= 30 && a.lag_spread_ms <= 40 && (a.media_silent_gaps ?? a.silent_gaps) === 0 &&
+  (a.windows > 0 && Math.abs(a.lag_ms) <= LAG_LIMIT_MS && a.lag_spread_ms <= LAG_SPREAD_LIMIT_MS && (a.media_silent_gaps ?? a.silent_gaps) === 0 &&
     (a.media_env_corr !== undefined ? a.media_env_corr >= 0.8 && Math.abs(a.media_env_lag_ms) <= 30 : a.corr >= 0.8))) &&
   (a.media_dropouts ?? a.dropouts) === 0;
 
@@ -80,8 +84,10 @@ async function step(name, fn) {
 }
 
 // Browsers without H.264 video (open-source Chromium) get the VP9 pages, as YouTube serves them.
+// Media Source in a dedicated worker is Chrome's (108+); Firefox has none.
 const probe = await browser.newPage();
 const h264 = await probe.evaluate(() => MediaSource.isTypeSupported('video/mp4; codecs="avc1.64001e"'));
+const workerMedia = await probe.evaluate(() => MediaSource.canConstructInDedicatedWorker === true);
 await probe.close();
 const VARIANTS = process.env.VARIANTS?.split(",") ??
   (!h264 ? ["webm-vp9"] : QUICK ? ["webm-opus"] : ["webm-opus", "mp4-aac"]);
@@ -98,7 +104,7 @@ for (const variant of VARIANTS) {
     const first = await frameState(page);
     const { ms, state } = await timeUntilOn(page, "first audio");
     const a = await listen(page, `${variant}-start`, 25);
-    memoryOneTab ??= memoryOfChrome(browser);
+    memoryOneTab ??= memoryOfBrowser(browser);
     const timing = state.timings[0];
     report.record(`${tag} starts automatically, original never heard`,
       first.originalGain === 0 && state.status === "on" && state.buttonState === "active" && good(a), {
@@ -208,8 +214,7 @@ for (const variant of VARIANTS) {
   });
 
   await step(`${tag} fullscreen keeps the button on the video`, async () => {
-    const cdp = await page.createCDPSession();
-    await cdp.send("Runtime.evaluate", { expression: "document.querySelector('.player').requestFullscreen()", userGesture: true, awaitPromise: true });
+    await evaluateAsUser(page, "document.querySelector('.player').requestFullscreen()");
     await sleep(1500);
     const where = await page.evaluate(() => {
       const button = document.querySelector(".musicless-btn");
@@ -320,7 +325,7 @@ for (const variant of VARIANTS) {
       const state = await frameState(page);
       report.record(`${tag} three minutes of continuous play (drift)`, good(a) && state.holds - start.holds <= 2, {
         position_s: Math.round(state.currentTime), holds: state.holds - start.holds, resyncs: state.resyncs - start.resyncs, ...a,
-        chrome_memory: memoryOfChrome(browser),
+        browser_memory: memoryOfBrowser(browser),
       });
     });
   }
@@ -439,23 +444,23 @@ await step("nothing is read before consent; consenting starts the next video", a
     // Turn on with the keyboard.
     const consented = async () => {
       const probe = await browser.newPage();
-      await probe.goto(`chrome-extension://${extensionId}/popup.html`);
+      await gotoExtensionPage(probe, extensionId, "popup.html");
       const stored = await probe.evaluate(() => chrome.storage.sync.get("consented"));
       await probe.close();
       return stored.consented === true;
     };
     const first = await browser.newPage();
-    await first.goto(`chrome-extension://${extensionId}/welcome.html`);
+    await gotoExtensionPage(first, extensionId, "welcome.html");
     await first.waitForSelector("#accept", { visible: true });
     await first.close();
     const leftOff = !(await consented()) && (await frameState(page)).status === "setup";
     const welcome = await browser.newPage();
-    await welcome.goto(`chrome-extension://${extensionId}/welcome.html`);
+    await gotoExtensionPage(welcome, extensionId, "welcome.html");
     await welcome.waitForSelector("#accept", { visible: true });
     await welcome.focus("#accept");
     await welcome.keyboard.press("Enter");
     const started = Date.now();
-    await welcome.waitForFunction(() => chrome.storage.sync.get("consented").then((stored) => stored.consented === true), { timeout: 5000 });
+    await until(welcome, isConsented, null, { timeout: 5000, label: "consent" });
     const turnedOn = await welcome.evaluate(() =>
       !document.querySelector("#done").classList.contains("off") && document.activeElement?.id === "doneHeading");
     await welcome.close();
@@ -493,11 +498,11 @@ await step("the popup asks before Musicless is on, and its button turns it on", 
   await setSettings(browser, extensionId, { consented: false });
   try {
     const popup = await browser.newPage();
-    await popup.goto(`chrome-extension://${extensionId}/popup.html`);
+    await gotoExtensionPage(popup, extensionId, "popup.html");
     await popup.waitForSelector("#accept", { visible: true });
     const asks = await popup.$eval("#settings", (section) => section.hidden);
     await popup.click("#accept");
-    await popup.waitForFunction(() => chrome.storage.sync.get("consented").then((stored) => stored.consented === true), { timeout: 5000 });
+    await until(popup, isConsented, null, { timeout: 5000, label: "consent" });
     const shown = await popup.$eval("#settings", (section) => !section.hidden);
     const focus = await popup.evaluate(() => document.activeElement?.id ?? null);
     await popup.close();
@@ -512,14 +517,14 @@ await step("in Arabic the welcome page reads right to left, and turns Musicless 
   const arabic = await launch({ lang: "ar", consented: false });
   try {
     const welcome = await arabic.browser.newPage();
-    await welcome.goto(`chrome-extension://${arabic.extensionId}/welcome.html`);
+    await gotoExtensionPage(welcome, arabic.extensionId, "welcome.html");
     await welcome.waitForSelector("#accept", { visible: true });
     const page = await welcome.evaluate(() => ({
       lang: document.documentElement.lang, dir: document.documentElement.dir, accept: document.querySelector("#accept").textContent,
     }));
     await welcome.focus("#accept");
-    await welcome.keyboard.press("Space");
-    await welcome.waitForFunction(() => chrome.storage.sync.get("consented").then((stored) => stored.consented === true), { timeout: 5000 });
+    await welcome.keyboard.press(" ");
+    await until(welcome, isConsented, null, { timeout: 5000, label: "consent" });
     report.record("in Arabic the welcome page reads right to left, and turns Musicless on",
       page.lang === "ar" && page.dir === "rtl" && page.accept === ARABIC.consent_accept.message, page);
   } finally {
@@ -535,19 +540,16 @@ await step("turned on from a video's button, the first-run page goes back to it"
     const page = await open(BASE);
     await play(page);
     await sleep(3000);
-    const opened = browser.waitForTarget((target) => target.type() === "page" && target.url().includes("welcome.html"), { timeout: 15000 });
+    const tabs = await browser.pages();
     await clickButton(page);
-    const welcome = await (await opened).page();
+    const welcome = await waitForExtensionPage(browser, extensionUrl(extensionId, "welcome.html"), { timeout: 15000, except: tabs });
     await welcome.waitForSelector("#accept", { visible: true, timeout: 10000 });
     await welcome.click("#accept");
     await welcome.waitForSelector("#back", { visible: true, timeout: 5000 });
     const instead = await welcome.evaluate(() => document.querySelector("#open").hidden);
     await page.evaluate(() => { window.notReloaded = true; });
     const reloaded = page.waitForNavigation({ timeout: 15000 }).then(() => true, () => false);
-    const closed = new Promise((resolve) => {
-      welcome.once("close", () => resolve(true));
-      setTimeout(() => resolve(false), 8000);
-    });
+    const closed = closes(welcome, 8000);
     await welcome.click("#back");
     const back = { open_youtube_hidden: instead, reloaded: await reloaded, page_closed: await closed };
     await page.waitForFunction("window.playerReady === true", { timeout: 30000 });
@@ -577,9 +579,9 @@ await step("the release build has no diagnostics, and a page cannot start its wo
       dataset: [...document.querySelectorAll(".musicless-btn")].some((button) => "musiclessDebug" in button.dataset),
     }));
     // A page script loads Musicless's hidden frame itself and hands it ports.
-    const answered = await page.evaluate((id) => new Promise((resolve) => {
+    const answered = await page.evaluate((url) => new Promise((resolve) => {
       const frame = document.createElement("iframe");
-      frame.src = `chrome-extension://${id}/separator.html`;
+      frame.src = url;
       frame.onload = () => {
         for (const message of [{ type: "musicless-port" }, { type: "musicless-port", token: "a guess" }]) {
           const channel = new MessageChannel();
@@ -589,7 +591,7 @@ await step("the release build has no diagnostics, and a page cannot start its wo
       };
       document.body.append(frame);
       setTimeout(() => resolve(false), 5000);
-    }), release.extensionId);
+    }), extensionUrl(release.extensionId, "separator.html"));
     report.record("the release build has no diagnostics, and a page cannot start its worker",
       state === undefined && exposed.capture === "undefined" && !exposed.dataset && !answered,
       { debug_reply: state ?? null, capture_inspector: exposed.capture, debug_dataset: exposed.dataset, page_started_worker: answered });
@@ -618,16 +620,35 @@ async function failsClosed(name, query, variant, expectReason) {
   });
 }
 if (h264) await failsClosed("plain MP4 file: fails closed until the user chooses", "", "progressive", "source");
-await failsClosed("copy-protected (ClearKey) audio: fails closed", "", "drm", "protected");
+// The copy-protected page plays ClearKey-encrypted Opus in MP4 through Media
+// Source, which Firefox 140 refuses ("Can't play type"), Musicless or not.
+async function pageLoads(variant) {
+  const page = await newPage(browser);
+  try {
+    await page.goto(`http://127.0.0.1:${PORT}/player.html?media=${SET}&variant=${variant}`);
+    for (const started = Date.now(); Date.now() - started < 15000; await sleep(250)) {
+      if (await page.evaluate(() => window.playerReady === true)) return true;
+      if (page.logs.some((line) => line.includes("NotSupportedError"))) return false;
+    }
+    return true; // a page that never loads fails its steps
+  } finally {
+    await page.close();
+  }
+}
+const protectedPlays = await pageLoads("drm");
+const noProtected = "this browser cannot play the test page's ClearKey audio";
+if (protectedPlays) await failsClosed("copy-protected (ClearKey) audio: fails closed", "", "drm", "protected");
+else report.skip("copy-protected (ClearKey) audio: fails closed", noProtected);
 await failsClosed("Media Source hidden in another frame: fails closed", "&realm=frame", BASE, "uncaptured");
-await failsClosed("Media Source in a worker (srcObject): fails closed", "&worker=1", BASE, "source");
+if (workerMedia) await failsClosed("Media Source in a worker (srcObject): fails closed", "&worker=1", BASE, "source");
+else report.skip("Media Source in a worker (srcObject): fails closed", "this browser has no Media Source in workers");
 
 // The dialog closed without a choice (Escape, or a click beside it): the
 // video stays held, and each later play attempt brings the choice back, even
 // though the user's intent to play never changed. Meanwhile the button shows
 // the plain note with its dot, not the struck note of removal at work.
 await step("a closed failure dialog comes back on play", async () => {
-  const page = await open(BASE, "&worker=1");
+  const page = await open(BASE, workerMedia ? "&worker=1" : "&realm=frame");
   await play(page);
   await waitFor(page, (s) => s.status === "failed", { timeout: 20000, label: "failure" });
   await sleep(800);
@@ -666,7 +687,8 @@ await step("a closed failure dialog comes back on play", async () => {
 });
 
 // Trying again in place (a slow computer, an error) is covered by the unit tests.
-await step("a failure nothing can help offers only original playback, and a stray key does not start it", async () => {
+if (!protectedPlays) report.skip("a failure nothing can help offers only original playback, and a stray key does not start it", noProtected);
+else await step("a failure nothing can help offers only original playback, and a stray key does not start it", async () => {
   const page = await open("drm");
   await play(page);
   await waitFor(page, (s) => s.status === "failed", { timeout: 20000, label: "failure" });
@@ -678,7 +700,7 @@ await step("a failure nothing can help offers only original playback, and a stra
       dialog_focused: document.activeElement === panel };
   });
   const before = await videoState(page);
-  await page.keyboard.press("Space"); // meant for the video
+  await page.keyboard.press(" "); // meant for the video
   await page.keyboard.press("Enter");
   await sleep(1000);
   const after = await videoState(page);
@@ -705,6 +727,22 @@ await step("Retry reloads the page when only a reload can help (uncaptured)", as
   await page.close();
 });
 
+// The model serving a page's hidden frame: which one it is, and how many tab
+// workers it serves (the test copy's model worker answers this).
+async function modelOf(page) {
+  for (const frame of page.frames()) {
+    const href = await frame.evaluate(() => location.href).catch(() => "");
+    if (!href.includes("/separator.html")) continue;
+    return frame.evaluate(() => new Promise((resolve) => {
+      const worker = new SharedWorker(new URL("model-worker.js", location.href), { type: "module", name: "musicless-model" });
+      worker.port.onmessage = ({ data }) => resolve(data);
+      worker.port.postMessage({ type: "test-model" });
+      setTimeout(() => resolve(null), 3000);
+    }));
+  }
+  return null;
+}
+
 await step("two tabs share one model", async () => {
   source = audioFile(BASE);
   const first = await open(BASE);
@@ -717,14 +755,15 @@ await step("two tabs share one model", async () => {
   // A video still buffering after the seek is not held yet, and shows "on" before its audio.
   await settled(second, "second tab with the next chunk ready");
   await sleep(8000);
-  const memory = memoryOfChrome(browser);
+  const memory = memoryOfBrowser(browser);
   const a1 = analyze(await dump(first, 7), "tab-1", { source });
   const a2 = analyze(await dump(second, 7), "tab-2", { source });
   // One shared worker holds the model for both tabs.
-  const models = browser.targets().filter((target) => target.type() === "shared_worker" && target.url().endsWith("/model-worker.js")).length;
-  report.record("two tabs share one model", models === 1 && state.model && good(a1) && good(a2) &&
+  const [model1, model2] = [await modelOf(first), await modelOf(second)];
+  const shared = !!model1 && model1.id === model2?.id && model1.clients >= 2;
+  report.record("two tabs share one model", shared && state.model && good(a1) && good(a2) &&
     (!memoryOneTab || memory.extension_mb - memoryOneTab.extension_mb < 250), {
-    model_workers: models, second_tab_audio_ms: ms, memory_one_tab: memoryOneTab, memory_two_tabs: memory,
+    model_shared: shared, model_clients: model1?.clients ?? null, second_tab_audio_ms: ms, memory_one_tab: memoryOneTab, memory_two_tabs: memory,
     tab1_media_env_corr: a1.media_env_corr, tab2_media_env_corr: a2.media_env_corr,
   });
   await first.close();
@@ -765,12 +804,12 @@ if (!QUICK) await step("a paused video lets the model go, then resumes", async (
   await play(page);
   await timeUntilOn(page, "start");
   await sleep(5000);
-  const active = memoryOfChrome(browser);
+  const active = memoryOfBrowser(browser);
   await pause(page);
   await sleep(160000); // two minutes until the session sleeps, then 30 s until the engine goes
   const asleep = await frameState(page);
   const frames = await engineFrames(page);
-  const idle = memoryOfChrome(browser);
+  const idle = memoryOfBrowser(browser);
   await play(page);
   const { ms } = await timeUntilOn(page, "after sleep");
   const a = await listen(page, "after-sleep", 12);
@@ -819,10 +858,8 @@ await step("page autoplays before any click (the browser's own autoplay policy)"
   const strict = await launch({ autoplay: false });
   try {
     const page = await newPage(strict.browser);
-    const cdp = await page.createCDPSession();
     // Reads state without granting the page user activation (Puppeteer's evaluate would).
-    const read = async (expression) => (await cdp.send("Runtime.evaluate", { expression, userGesture: false, returnByValue: true })).result.value;
-    const state = () => read(`(() => { const v = document.querySelector("video"); const b = document.querySelector(".musicless-btn");
+    const state = () => readWithoutActivation(page, `(() => { const v = document.querySelector("video"); const b = document.querySelector(".musicless-btn");
       const d = b?.dataset.musiclessDebug ? JSON.parse(b.dataset.musiclessDebug) : {};
       return { t: v.currentTime, paused: v.paused, context: d.context, attached: d.attached, status: d.status }; })()`);
     source = audioFile(BASE);
@@ -832,7 +869,7 @@ await step("page autoplays before any click (the browser's own autoplay policy)"
     await sleep(3000);
     const muted = await state();
     await page.mouse.click(100, 560); // the user clicks the page, then unmutes
-    await read(`document.querySelector("video").muted = false; 1`);
+    await readWithoutActivation(page, `(() => { document.querySelector("video").muted = false; return 1; })()`);
     const { ms } = await timeUntilOn(page, "unmuted after a click");
     const a = await listen(page, "strict-autoplay", 12);
     report.record("page autoplays before any click (the browser's own autoplay policy)",
@@ -849,7 +886,7 @@ await step("extension removed while playing: fails closed", async () => {
   const page = await open(BASE);
   await play(page);
   await timeUntilOn(page, "start");
-  await browser.uninstallExtension(extensionId);
+  await uninstall(browser, extensionId);
   await sleep(2000);
   const held = await videoState(page);
   const panel = await page.evaluate(() => document.querySelector(".musicless-dialog:not([hidden]) .musicless-dialog__message")?.textContent ?? null);
@@ -862,8 +899,8 @@ await step("extension removed while playing: fails closed", async () => {
 });
 
 report.save();
-const failed = report.rows.filter((row) => !row.ok).length;
-console.log(`\n${report.rows.length - failed}/${report.rows.length} passed`);
+const { failed, text } = report.summary();
+console.log(`\n${text}`);
 await browser.close();
 server.close();
 process.exit(failed ? 1 : 0);

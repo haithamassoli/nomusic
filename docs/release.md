@@ -28,7 +28,10 @@ On Linux, before the tag:
    - `node interface.mjs` (the pages, the popup and the player's controls, in English and Arabic);
    - `node youtube.mjs` (live YouTube; retry a step an ad or bot check spoiled);
    - `node controls.mjs` (where the button sits in YouTube's own player);
-   - `node memory.mjs`.
+   - `node memory.mjs`;
+   - in Firefox (with `FIREFOX=<path>` and `FIREFOX_AR=<path to an Arabic Firefox>`),
+     `QUICK=1 node local.mjs`, `node interface.mjs`, `node youtube.mjs` and
+     `node controls.mjs`.
 
    Keep each run's report and explain any failure.
 6. **Listen.** Load `extension/` and watch a few videos with speech over
@@ -44,10 +47,10 @@ On Linux, before the tag:
 7. **Package check.** `./scripts/package.sh` writes `dist/musicless-<version>.zip`
    and `dist/musicless-<version>-firefox.zip`, the same files with Firefox's
    manifest. Unzip the first and run `MUSICLESS_EXTENSION=<folder> QUICK=1 node local.mjs`, then
-   load that folder in a clean profile and play one video.
-   The browser tests run Chrome-family browsers only. Check the Firefox zip
-   with Mozilla's linter, `npx addons-linter@10.15.0 dist/musicless-<version>-firefox.zip`
-   (no errors), then in Firefox: open `about:debugging`, choose **This
+   load that folder in a clean profile and play one video. Unzip the Firefox
+   zip and run the same in Firefox (`FIREFOX=<path>`), and check it with
+   Mozilla's linter, `npx addons-linter@10.15.0 dist/musicless-<version>-firefox.zip`
+   (no errors). Then in Firefox: open `about:debugging`, choose **This
    Firefox**, **Load Temporary Add-on**, and the zip. Turn Musicless on and
    play a video with speech over music, a seek and a speed change, in English
    and in Arabic. The release zip

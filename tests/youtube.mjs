@@ -1,9 +1,11 @@
 // Real-site suite: the shipped extension (YouTube matches only, plus the local
-// embed page) in a headless Chromium browser against live YouTube pages.
+// embed page) in a headless browser against live YouTube pages (Chrome, or
+// Firefox with FIREFOX: see harness.mjs).
 // Musicless starts by itself (the default setting); no step clicks to enable it.
 // Usage: node youtube.mjs
 import {
-  analyze, clickButton, debugRequest, dump, frameState, launch, newPage, Report, sleep, waitFor, WORK,
+  analyze, clickButton, debugRequest, dump, evaluateAsUser, FIREFOX, frameState, LAG_LIMIT_MS, LAG_SPREAD_LIMIT_MS, launch, newPage, Report, sleep,
+  useWindowedUserAgent, waitFor, WORK,
 } from "./harness.mjs";
 import { serve } from "./serve.mjs";
 
@@ -13,7 +15,7 @@ const server = await serve(WORK, PORT);
 const { browser } = await launch();
 const isOn = (s) => s.status === "on" && !s.holding;
 const good = (a) => a.over_silence === 0 && ((a.windows === 0 && a.reference_db < -40 && a.output_db < -40) ||
-  (a.windows > 0 && Math.abs(a.lag_ms) <= 30 && a.lag_spread_ms <= 40 && a.corr >= 0.8 && a.silent_gaps === 0 && a.dropouts === 0));
+  (a.windows > 0 && Math.abs(a.lag_ms) <= LAG_LIMIT_MS && a.lag_spread_ms <= LAG_SPREAD_LIMIT_MS && a.corr >= 0.8 && a.silent_gaps === 0 && a.dropouts === 0));
 
 // A step an ad interrupted is retried once. The first attempt stays in the
 // report, marked as retried; only the retry counts.
@@ -33,8 +35,7 @@ async function step(name, fn, { retry = false } = {}) {
 
 async function openPage(url) {
   const page = await newPage(browser);
-  const agent = (await browser.userAgent()).replace("HeadlessChrome", "Chrome");
-  await page.setUserAgent(agent);
+  await useWindowedUserAgent(page);
   await page.goto(url, { waitUntil: "domcontentloaded" });
   // Cookie consent (shown in some regions) blocks the page.
   if (page.url().includes("consent.")) {
@@ -187,8 +188,7 @@ await step("Tutorial: seek back", async () => {
 });
 
 await step("Tutorial: fullscreen keeps the button on the player", async () => {
-  const cdp = await tutorial.createCDPSession();
-  await cdp.send("Runtime.evaluate", { expression: "document.getElementById('movie_player').requestFullscreen()", userGesture: true, awaitPromise: true });
+  await evaluateAsUser(tutorial, "document.getElementById('movie_player').requestFullscreen()");
   await sleep(1500);
   const where = await tutorial.evaluate(() => {
     const button = [...document.querySelectorAll(".musicless-btn")].find((b) => b.style.display !== "none");
@@ -252,7 +252,7 @@ await step("Heavy song: starts by itself", async () => {
   const { page } = await openWatch("5abamRO41fE", 40);
   const { ms } = await timeUntilOn(page, "first audio");
   const a = await listen(page, "yt-heavy", 20);
-  report.record("Heavy song: starts by itself", Math.abs(a.lag_ms ?? 999) <= 30 && a.silent_gaps === 0,
+  report.record("Heavy song: starts by itself", Math.abs(a.lag_ms ?? 999) <= LAG_LIMIT_MS && a.silent_gaps === 0,
     { first_audio_ms: ms, note: "few vocals: sync judged on lag only", ...a });
   await page.close();
 }, { retry: true });
@@ -302,7 +302,9 @@ await step("Inline previews: muted, left alone", async () => {
   });
   const sessions = (await debugRequest(page, "sessions")) ?? [];
   const frames = await page.evaluate(() => document.querySelectorAll('iframe[src*="separator.html"]').length);
-  report.record("Inline previews: muted, left alone",
+  // In Firefox, YouTube may show no preview at all: then there is nothing to check.
+  if (FIREFOX && !preview && frames === 0 && sessions.every((s) => !s.attached)) report.skip("Inline previews: muted, left alone", "YouTube played no inline preview");
+  else report.record("Inline previews: muted, left alone",
     !!preview && preview.muted && frames === 0 && sessions.every((s) => !s.attached),
     { preview, sessions: sessions.length, attached: sessions.filter((s) => s.attached).length, engine_frames: frames });
   await page.close();
@@ -324,9 +326,8 @@ await step("Embedded player on another site", async () => {
 }, { retry: true });
 
 report.save();
-const counted = report.rows.filter((row) => !row.retried);
-const failed = counted.filter((row) => !row.ok).length;
-console.log(`\n${counted.length - failed}/${counted.length} passed`);
+const { failed, text } = report.summary();
+console.log(`\n${text}`);
 await browser.close();
 server.close();
 process.exit(failed ? 1 : 0);

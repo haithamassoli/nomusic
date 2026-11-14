@@ -32,8 +32,28 @@ window.addEventListener("message", (event) => {
 });
 `;
 
+// Which model instance serves a frame, and how many tab workers it serves:
+// the browser tests check that every tab shares one model.
+const MODEL_DEBUG = `
+// (test copy) this model's identity and the tab workers it serves
+const modelForTests = { id: Math.random().toString(36).slice(2), clients: 0 };
+const connectForTests = self.onconnect;
+self.onconnect = (event) => {
+  connectForTests(event);
+  const serveClient = event.ports[0].onmessage;
+  event.ports[0].onmessage = (message) => {
+    if (message.data?.type === "client") modelForTests.clients++;
+    if (message.data?.type === "test-model") event.ports[0].postMessage(modelForTests);
+    else serveClient(message);
+  };
+};
+`;
+
 export function instrumentExtension(dir) {
-  cpSync(new URL("./recorder.js", import.meta.url), join(dir, "recorder.js"));
+  for (const file of ["recorder.js", "recorder-tap.js"]) cpSync(new URL(`./${file}`, import.meta.url), join(dir, file));
+  const model = readFileSync(join(dir, "model-worker.js"), "utf8");
+  if (!/^self\.onconnect = \(event\) => \{$/m.test(model)) throw new Error("model-worker.js no longer sets `self.onconnect`: update the harness");
+  writeFileSync(join(dir, "model-worker.js"), model + MODEL_DEBUG);
   const capture = readFileSync(join(dir, "capture.js"), "utf8");
   const inspected = capture.replace(/^( *const streams = new Map\(\);.*\n)/m, `$1${CAPTURE_DEBUG}`)
     .replace(/^( *function trim\(stream, limit\) \{\n)/m, "$1    stream.dropped = true; // (test copy) older audio was let go\n");

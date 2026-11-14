@@ -2,6 +2,10 @@
 // harness adds it to its own copy of the extension.
 // Taps the original element audio and Musicless's output on the same clock so
 // the browser tests can measure sync and leakage from what actually played.
+// The taps are AudioWorklets (recorder-tap.js), which say exactly when each
+// block was rendered in every browser.
+
+const modules = new WeakMap(); // AudioContext -> the tap module loading into it
 
 export class Recorder {
   constructor(ctx, original, output, video) {
@@ -12,33 +16,35 @@ export class Recorder {
     this.limit = this.rate * 180;
     this.tracks = { original: [], output: [] };
     this.lengths = { original: 0, output: 0 };
-    const sink = ctx.createGain();
-    sink.gain.value = 0;
-    sink.connect(ctx.destination);
-    for (const [name, node] of [["original", original], ["output", output]]) {
-      const tap = ctx.createScriptProcessor(4096, 2, 1);
-      tap.onaudioprocess = (event) => {
-        const input = event.inputBuffer;
-        const left = input.getChannelData(0);
-        const right = input.numberOfChannels > 1 ? input.getChannelData(1) : left;
-        const mono = new Float32Array(left.length);
-        for (let i = 0; i < mono.length; i++) mono[i] = 0.5 * (left[i] + right[i]);
-        const track = this.tracks[name];
-        track.push({ time: event.playbackTime, data: mono });
-        if (name === "output") {
-          // The media time this block will be heard at, if playback continues as now.
-          // A ScriptProcessor hands over its input two buffers after it was rendered.
-          const rendered = event.playbackTime - (2 * tap.bufferSize) / this.rate;
-          const ahead = (rendered - this.ctx.currentTime) * this.video.playbackRate;
-          this.media.push([event.playbackTime, this.video.paused ? null : this.video.currentTime + ahead]);
-          if (this.media.length > 4000) this.media.shift();
-        }
-        this.lengths[name] += mono.length;
-        while (this.lengths[name] > this.limit) this.lengths[name] -= track.shift().data.length;
-      };
-      node.connect(tap);
-      tap.connect(sink);
+    if (!modules.has(ctx)) modules.set(ctx, ctx.audioWorklet.addModule(chrome.runtime.getURL("recorder-tap.js")));
+    modules.get(ctx).then(() => {
+      const sink = ctx.createGain();
+      sink.gain.value = 0;
+      sink.connect(ctx.destination);
+      for (const [name, node] of [["original", original], ["output", output]]) {
+        const tap = new AudioWorkletNode(ctx, "musicless-recorder-tap");
+        tap.port.onmessage = ({ data }) => this.add(name, data.time, data.data);
+        node.connect(tap);
+        tap.connect(sink);
+      }
+    }, (error) => console.error("musicless test recorder:", error));
+  }
+
+  add(name, time, posted) {
+    // A copy of its own: Firefox reads posted audio in a content script
+    // through a wrapper, one sample at a time and far slower.
+    const data = new Float32Array(posted.length);
+    data.set(posted);
+    const track = this.tracks[name];
+    track.push({ time, data });
+    if (name === "output") {
+      // The media time this block was rendered at: the video's position now,
+      // taken back to when the block was rendered, at the current speed.
+      this.media.push([time, this.video.paused ? null : this.video.currentTime + (time - this.ctx.currentTime) * this.video.playbackRate]);
+      if (this.media.length > 8000) this.media.shift();
     }
+    this.lengths[name] += data.length;
+    while (this.lengths[name] > this.limit) this.lengths[name] -= track.shift().data.length;
   }
 
   // Both tracks over the same clock span, as Int16 base64 for transport.
@@ -54,6 +60,7 @@ export class Recorder {
     for (const name of ["original", "output"]) {
       const samples = new Int16Array(Math.round(seconds * this.rate));
       for (const block of this.tracks[name]) {
+        if (block.time + block.data.length / this.rate < start) continue;
         const at = Math.round((block.time - start) * this.rate);
         for (let i = 0; i < block.data.length; i++) {
           const j = at + i;

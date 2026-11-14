@@ -2,7 +2,7 @@
   "name": "musicless-tests",
   "private": true,
   "type": "module",
-  "description": "Unit tests (node:test) and browser tests (Puppeteer driving an installed Chromium browser) for the Musicless extension.",
+  "description": "Unit tests (node:test) and browser tests (Puppeteer driving an installed Chromium browser or Firefox) for the Musicless extension.",
   "scripts": {
     "unit": "node --test unit/*.test.mjs",
     "local": "node local.mjs",

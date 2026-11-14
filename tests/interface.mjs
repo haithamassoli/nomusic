@@ -1,10 +1,14 @@
-// Deterministic extension-page and player UI regressions in real Chrome.
+// Deterministic extension-page and player UI regressions in a real browser
+// (Chrome, or Firefox with FIREFOX and FIREFOX_AR: see harness.mjs).
 // Uses the local synthetic media for return-to-video; no live YouTube required.
 // Usage: MEDIA_SET=synth node interface.mjs [media dir]
 import assert from "node:assert/strict";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { frameState, launch, newPage, Report, setSettings, sleep, waitFor, WORK } from "./harness.mjs";
+import {
+  bringToFront, closes, emulateMedia, extensionUrl, frameState, gotoExtensionPage, launch, newPage, Report, setSettings, sleep, until, waitFor,
+  waitForExtensionPage, WORK,
+} from "./harness.mjs";
 import { serve } from "./serve.mjs";
 
 const report = new Report(process.env.REPORT ?? "interface");
@@ -19,15 +23,16 @@ async function step(name, fn) {
 }
 
 async function back(welcome) {
-  const closed = new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("Back did not close setup")), 10000);
-    welcome.once("close", () => { clearTimeout(timer); resolve(); });
-  });
-  await Promise.all([closed, welcome.click("#back").catch(error => {
-    // Chrome can close setup before replying to mouse-up. The close above must
-    // still occur; unrelated input errors remain failures.
-    if (!error.message.includes("Target closed")) throw error;
-  })]);
+  // The browser can close setup before replying to mouse-up: what counts is that it closes.
+  welcome.click("#back").catch(() => {});
+  if (!(await closes(welcome, 10000))) throw new Error("Back did not close setup");
+}
+
+// The first-run page the extension opens after `action` (a click on its button).
+async function welcomeAfter(action) {
+  const tabs = await browser.pages();
+  await action();
+  return waitForExtensionPage(browser, extensionUrl(extensionId, "welcome.html"), { timeout: 15000, except: tabs });
 }
 
 async function fromVideo(check) {
@@ -36,11 +41,9 @@ async function fromVideo(check) {
   let welcome;
   try {
     await page.goto(playerURL);
-    await page.bringToFront();
+    await bringToFront(page);
     await page.waitForFunction(() => window.playerReady && document.querySelector("video").currentTime > 1);
-    const opened = browser.waitForTarget(t => t.type() === "page" && t.url().includes("welcome.html"), { timeout: 15000 });
-    await page.click(".musicless-btn");
-    welcome = await (await opened).page();
+    welcome = await welcomeAfter(() => page.click(".musicless-btn"));
     await welcome.waitForSelector("#accept", { visible: true });
     return await check(page, welcome);
   } catch (error) {
@@ -50,7 +53,7 @@ async function fromVideo(check) {
     }).catch(() => null);
     throw new Error(`${error.message}; ${JSON.stringify(state)}; ${page.logs.filter(line => line.startsWith("[pageerror]")).join("; ")}`);
   } finally {
-    if (welcome && !welcome.isClosed()) await welcome.close();
+    if (welcome && !welcome.isClosed()) await welcome.close().catch(() => {});
     await page.close();
   }
 }
@@ -58,8 +61,8 @@ async function fromVideo(check) {
 // The real Button module, with only its Session supplied as a UI fixture.
 // Browser focus, keyboard/pointer events, DOM moves and styles remain real.
 async function playerUI(page, shorts = false) {
-  await page.goto(`chrome-extension://${extensionId}/privacy.html`);
-  await page.bringToFront();
+  await gotoExtensionPage(page, extensionId, "privacy.html");
+  await bringToFront(page);
   await page.evaluate(async shorts => {
     const css = document.createElement("link"); css.rel = "stylesheet"; css.href = "content.css";
     const loaded = new Promise(resolve => { css.onload = resolve; }); document.head.append(css); await loaded;
@@ -106,7 +109,7 @@ try {
       await page.evaluate(() => window.addEventListener("pageshow", event => { window.restoredFromCache = event.persisted; }));
       const replacement = new URL(playerURL); replacement.hostname = hostname; replacement.searchParams.set("replacement", "1");
       await page.goto(replacement.href);
-      await page.bringToFront();
+      await bringToFront(page);
       await page.waitForFunction(() => window.playerReady === true);
       await page.evaluate(() => {
         const input = Object.assign(document.createElement("input"), { id: "draft", value: "Unsaved draft" });
@@ -114,7 +117,7 @@ try {
       });
       let navigations = 0;
       page.on("framenavigated", frame => { if (frame === page.mainFrame()) navigations++; });
-      await welcome.bringToFront();
+      await bringToFront(welcome);
       await welcome.click("#accept");
       await welcome.waitForSelector("#back", { visible: true });
       await back(welcome);
@@ -137,9 +140,7 @@ try {
       await page.setContent(`<input id="draft" value="Unsaved draft"><iframe width="800" height="600" src="${playerURL}"></iframe>`);
       const frame = await (await page.$("iframe")).contentFrame();
       await frame.waitForFunction(() => window.playerReady && document.querySelector("video").currentTime > 1);
-      const opened = browser.waitForTarget(t => t.type() === "page" && t.url().includes("welcome.html"));
-      await frame.click(".musicless-btn");
-      welcome = await (await opened).page();
+      welcome = await welcomeAfter(() => frame.click(".musicless-btn"));
       await welcome.waitForSelector("#accept", { visible: true });
       await welcome.click("#accept");
       await welcome.waitForSelector("#back", { visible: true });
@@ -155,7 +156,7 @@ try {
       assert.equal(await page.$eval("#draft", el => el.value), "Unsaved draft");
       return { embeddedFrameReloaded: true, outerNavigations, draftPreserved: true };
     } finally {
-      if (welcome && !welcome.isClosed()) await welcome.close();
+      if (welcome && !welcome.isClosed()) await welcome.close().catch(() => {});
       await page.close();
     }
   });
@@ -207,10 +208,9 @@ try {
 
   await step("the welcome instruction's glyph stays visible in forced colors", async () => {
     await setSettings(browser, extensionId, { consented: true });
-    await page.goto(`chrome-extension://${extensionId}/welcome.html`);
+    await gotoExtensionPage(page, extensionId, "welcome.html");
     await page.waitForSelector("#done .steps .glyph", { visible: true });
-    const cdp = await page.createCDPSession();
-    await cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "forced-colors", value: "active" }] });
+    await emulateMedia(page, { "forced-colors": "active" });
     try {
       const glyph = await page.$("#done .steps .glyph");
       const png = await glyph.screenshot({ type: "png" });
@@ -225,7 +225,7 @@ try {
       }, Buffer.from(png).toString("base64"));
       assert(differentPixels > 0, "the icon must contrast with its background");
       return { differentPixels };
-    } finally { await cdp.send("Emulation.setEmulatedMedia", { features: [] }); await cdp.detach(); }
+    } finally { await emulateMedia(page, { "forced-colors": "" }); }
   });
   await step("player overrides reset on the next source and defaults leave the current video alone", async () => {
     await setSettings(browser, extensionId, { consented: true, autoStart: false });
@@ -270,7 +270,7 @@ try {
       try {
         const popup = await localized.browser.newPage();
         await popup.setViewport({ width: 320, height: 600, deviceScaleFactor: 2 });
-        await popup.goto(`chrome-extension://${localized.extensionId}/popup.html`);
+        await gotoExtensionPage(popup, localized.extensionId, "popup.html");
         await popup.waitForSelector("#accept", { visible: true });
         const expectedAccept = await popup.evaluate(() => chrome.i18n.getMessage("consent_accept"));
         assert.equal(expectedAccept, lang === "ar" ? "تفعيل «بلا موسيقى»" : "Turn on Musicless");
@@ -279,7 +279,7 @@ try {
         await popup.waitForSelector("#settings:not([hidden])");
         for (const on of [true, false]) {
           if (!on) await popup.click("#autoStart");
-          await popup.waitForFunction(on => chrome.storage.sync.get("autoStart").then(s => s.autoStart === on), {}, on);
+          await until(popup, on => chrome.storage.sync.get("autoStart").then(s => s.autoStart === on), on, { label: "the setting" });
           const state = await popup.evaluate(on => {
             const hint = document.getElementById("oneVideo"), glyph = hint.querySelector(".glyph");
             const iconName = chrome.i18n.getMessage(on ? "control_on" : "control_name");
@@ -294,12 +294,12 @@ try {
           assert.equal(state.icon, state.iconName);
           assert.equal(state.crossed, on); assert.equal(state.described, "oneVideo");
           for (const scheme of ["light", "dark"]) {
-            await popup.emulateMediaFeatures([{ name: "prefers-color-scheme", value: scheme }]);
-            await popup.waitForFunction((scheme, lang) => {
+            await emulateMedia(popup, { "prefers-color-scheme": scheme });
+            await until(popup, ([scheme, lang]) => {
               const logo = document.querySelector(".popup-header img");
               return logo.complete && logo.currentSrc.endsWith(
                 `musicless-logo-${lang === "ar" ? "ar-" : ""}${scheme === "dark" ? "paper" : "ink"}.svg`);
-            }, {}, scheme, lang);
+            }, [scheme, lang], { label: `the ${scheme} logo` });
             const header = await popup.evaluate(() => ({
               height: document.querySelector(".popup-header").getBoundingClientRect().height,
               logoHeight: document.querySelector(".popup-header img").getBoundingClientRect().height,
@@ -316,7 +316,7 @@ try {
         }
         const welcome = await localized.browser.newPage();
         await welcome.setViewport({ width: 900, height: 750, deviceScaleFactor: 1 });
-        await welcome.goto(`chrome-extension://${localized.extensionId}/welcome.html`);
+        await gotoExtensionPage(welcome, localized.extensionId, "welcome.html");
         await welcome.waitForSelector("#done:not(.off)");
         // Arabic titles are drawn in the bundled Alexandria; English never loads it.
         const titleFont = await welcome.evaluate(async () => {
@@ -346,7 +346,7 @@ try {
         await welcome.waitForSelector("#step3Text .glyph-on");
         await checkSteps(true);
         for (const reduce of [false, true]) {
-          await welcome.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: reduce ? "reduce" : "no-preference" }]);
+          await emulateMedia(welcome, { "prefers-reduced-motion": reduce ? "reduce" : "no-preference" });
           await popup.evaluate(() => chrome.storage.sync.set({ consented: false }));
           await welcome.waitForSelector(".brand.intact");
           assert.equal(await welcome.$eval(".whole-note", el => getComputedStyle(el).opacity), "1");
@@ -361,11 +361,11 @@ try {
           await sleep(1000);
           assert.equal(await welcome.$eval(".whole-note", el => getComputedStyle(el).opacity), "0");
         }
-        await welcome.reload();
+        await gotoExtensionPage(welcome, localized.extensionId, "welcome.html"); // a reload
         await welcome.waitForSelector("#done:not(.off)");
         assert.equal(await welcome.evaluate(() => document.getAnimations().length), 0);
         for (const scheme of ["light", "dark"]) {
-          await welcome.emulateMediaFeatures([{ name: "prefers-color-scheme", value: scheme }]);
+          await emulateMedia(welcome, { "prefers-color-scheme": scheme });
           await welcome.screenshot({ path: join(WORK, `${lang}-welcome-${scheme}.png`) });
         }
         return { lang, defaultsExplained: true, perVideoGlyphs: true, consentRequired: true, numberedSteps: true, snapAndReducedMotion: true };
@@ -378,6 +378,6 @@ try {
   await browser.close();
   server.close();
 }
-const failed = report.rows.filter(row => !row.ok).length;
-console.log(`\n${report.rows.length - failed}/${report.rows.length} passed`);
+const { failed, text } = report.summary();
+console.log(`\n${text}`);
 process.exitCode = failed ? 1 : 0;
