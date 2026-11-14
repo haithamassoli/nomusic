@@ -24,6 +24,7 @@ Build the sets as described below.
 | Release candidate | The browser tests and listening in step 1 of the [release guide](release.md) |
 | YouTube markup or extension loading | `node controls.mjs` or `node loader.mjs`, plus local checks |
 | Memory lifetime or buffer retention | `MEDIA_SET=synth node memory.mjs` and `node soak.mjs` |
+| Firefox only (an update or removal, the leash) | `FIREFOX=<path> MEDIA_SET=synth QUICK=1 node local.mjs` |
 
 `CHROME=/path/to/browser` selects Chrome, Edge, Brave or Chromium. Set
 `MUSICLESS_NO_SANDBOX=1` for portable browsers or containers that cannot run
@@ -104,8 +105,14 @@ page, and Back to the video from a video's button), failure recovery (Reload
 page and Play original sound; only Play original sound where nothing
 can help; a closed dialog coming back on play), two tabs sharing one model,
 capture memory on a long stream, a paused video releasing the model, the
-browser's real autoplay policy, and the extension being removed while a video
-plays.
+browser's real autoplay policy, and the extension being updated and then
+removed while a video plays (Chrome fails closed; Firefox carries on with the
+new copy, and reloads the page once Musicless is gone). In Firefox the update
+is also tried with Musicless off for the video, with automatic removal off,
+and while Musicless holds the video for the user. Each time, the stopped copy
+must be silent within a second of the new one starting, and the new one must
+carry the video's sound. Removal must also reload a page whose video
+Musicless held for the user.
 
 Other browsers: `CHROME=/path/to/browser QUICK=1 node local.mjs`. Portable
 browser copies and CI containers need `MUSICLESS_NO_SANDBOX=1`. Browsers without

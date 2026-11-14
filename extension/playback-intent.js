@@ -2,13 +2,18 @@
 // while it waits for separated audio. Native events cover the player's
 // controls; intent.js (page world) also reports a page's pause() call when the
 // video was already paused by us.
+//
+// While Musicless holds a video the user wants played, the video carries a
+// mark: Firefox can stop this copy mid-hold, and the next copy (which goes on
+// holding) or, once Musicless is gone, the page's capture script (which
+// reloads the page) then knows the pause is not the user's.
 
 export class PlaybackIntent {
   constructor(video, onChange = () => {}) {
     this.video = video;
     this.onChange = onChange;
-    this.wantsPlay = !video.paused && !video.ended;
-    this.held = false;
+    this.held = video.dataset.musiclessPlaybackHeld === "1"; // by an earlier copy
+    this.wantsPlay = this.held || (!video.paused && !video.ended);
     this.disposed = false;
     this._onIntent = (event) => {
       if (typeof event.detail?.playing === "boolean") this._record(event.detail.playing);
@@ -30,6 +35,7 @@ export class PlaybackIntent {
     if (this.disposed) return;
     const changed = this.wantsPlay !== playing;
     this.wantsPlay = playing;
+    this._mark();
     if (this.held && !this.video.paused) this._command("pause");
     if (changed) this.onChange(playing);
   }
@@ -46,9 +52,15 @@ export class PlaybackIntent {
     }
   }
 
+  _mark() {
+    if (this.held && this.wantsPlay) this.video.dataset.musiclessPlaybackHeld = "1";
+    else delete this.video.dataset.musiclessPlaybackHeld;
+  }
+
   hold() {
     if (this.disposed) return;
     this.held = true;
+    this._mark();
     this.video.dataset.musiclessPlaybackTrack = "1"; // in case the page removed it: intent.js needs it
     if (!this.video.paused) this._command("pause");
   }
@@ -56,6 +68,7 @@ export class PlaybackIntent {
   release() {
     if (this.disposed || !this.held) return;
     this.held = false;
+    this._mark();
     if (this.wantsPlay && this.video.paused) this._command("play");
   }
 
@@ -68,6 +81,7 @@ export class PlaybackIntent {
     delete this.video.dataset.musiclessPlaybackTrack;
     const resume = restore && this.held && this.wantsPlay;
     this.held = false;
+    this._mark();
     if (resume && this.video.paused) this._command("play");
   }
 }

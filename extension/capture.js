@@ -399,10 +399,48 @@
     };
   }
 
+  // Firefox stops a copy of Musicless that is removed without a word to it,
+  // and a video it routed falls silent with it (audio.js). In Firefox the
+  // content script says from its start, and every second, that it runs. This
+  // script lives on in the page. After ALIVE_TICKS of its own seconds without
+  // word, it keeps no more audio, and once a video Musicless routed (the one
+  // with a leash, audio.js) plays, or one Musicless was holding for the user
+  // wants to (playback-intent.js), it reloads the page there, so the video has
+  // its own sound. A page could post these messages itself; it can reload
+  // itself anyway.
+  const ALIVE_TICKS = 5;
+  let quiet = null; // seconds without word from the content script, or null before any
+  let watching = null;
+  const silenced = (video) => "musiclessLeash" in video && (!video.paused || video.dataset.musiclessPlaybackHeld === "1") &&
+    !video.ended && !video.muted && video.volume > 0;
+  function watchAlive() {
+    if (quiet === null || ++quiet < ALIVE_TICKS) return;
+    if (quiet === ALIVE_TICKS) {
+      consented = false;
+      for (const stream of streams.values()) dropMedia(stream);
+    }
+    const video = [...document.querySelectorAll("video")].find(silenced);
+    if (!video) return;
+    quiet = null;
+    // As reloadPage (navigation.js): a YouTube watch page keeps its position.
+    safely(() => {
+      if (location.pathname === "/watch" && video.currentTime >= 1) {
+        const url = new URL(location.href);
+        url.searchParams.set("t", `${Math.floor(video.currentTime)}s`);
+        location.replace(url.href);
+      } else {
+        location.reload();
+      }
+    });
+  }
+
   window.addEventListener("message", (event) => {
     if (event.source !== window || event.data?.[NS] !== "control") return;
     const { type, streamId } = event.data;
-    if (type === "hello") {
+    if (type === "alive") {
+      quiet = 0;
+      watching ??= setInterval(watchAlive, 1000);
+    } else if (type === "hello") {
       for (const id of streams.keys()) post(describe(id));
     } else if (type === "consent") {
       consented = event.data.consented === true;

@@ -72,6 +72,11 @@ export class CaptureBus {
     this.control({ type: "consent", consented });
   }
 
+  // This copy of Musicless runs (Firefox; capture.js).
+  alive() {
+    this.control({ type: "alive" });
+  }
+
   streamFor(url) {
     return this.urls.get(url) ?? null;
   }

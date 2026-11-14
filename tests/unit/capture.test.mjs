@@ -19,7 +19,8 @@ const INIT = opus.subarray(0, starts[0]);
 const CLUSTERS = starts.map((start, i) => opus.subarray(start, starts[i + 1] ?? opus.length));
 
 // `consented`: the content script's answer, sent at once (null: not yet).
-function sandbox({ streamLimit = 120_000, totalLimit = 400_000, maxEntries = 10000, consented = true } = {}) {
+// `globals` adds to or replaces the page's globals.
+function sandbox({ streamLimit = 120_000, totalLimit = 400_000, maxEntries = 10000, consented = true, globals = {} } = {}) {
   const posted = [];
   const listeners = [];
   class MediaSource {
@@ -45,6 +46,7 @@ function sandbox({ streamLimit = 120_000, totalLimit = 400_000, maxEntries = 100
     URL: { createObjectURL: () => `blob:test/${++urls}` },
     postMessage: (message) => posted.push(message),
     addEventListener: (type, fn) => listeners.push(fn),
+    ...globals,
   };
   context.window = context;
   vm.createContext(context);
@@ -431,4 +433,83 @@ test("an unsubscribe posted by the page does not stop a subscription", () => {
   env.control({ type: "unsubscribe", streamId: 1 });
   sb.appendBuffer(CLUSTERS[0]);
   assert.equal(env.posted.filter((m) => m.type === "event").length, 1, "the append still goes out");
+});
+
+// In Firefox the content script says from its start, and every second, that
+// it runs (main.js). `tick` is one of this script's own seconds. A video
+// Musicless routed carries its leash (audio.js).
+function firefoxPage({ pathname = "/watch", routed = true } = {}) {
+  let watch = null;
+  const reloads = [];
+  const video = { paused: false, ended: false, muted: false, volume: 1, currentTime: 42.7, dataset: {}, ...(routed ? { musiclessLeash: {} } : {}) };
+  class PageURL extends URL {
+    static createObjectURL() { return "blob:test/1"; }
+  }
+  const location = { href: `https://www.youtube.com${pathname}?v=a`, pathname,
+    replace: (url) => reloads.push(url), reload: () => reloads.push("reload") };
+  const env = sandbox({ globals: {
+    URL: PageURL,
+    setInterval: (fn) => { watch = fn; return 1; },
+    document: { querySelectorAll: () => [video] },
+    location,
+  } });
+  return { ...env, video, location, reloads, tick: (seconds = 1) => { for (let i = 0; i < seconds; i++) watch?.(); } };
+}
+
+test("once the content script has not said it runs for 5 s, the page reloads where a video Musicless routed plays", () => {
+  const page = firefoxPage();
+  page.control({ type: "alive" });
+  page.tick(4);
+  page.control({ type: "alive" });
+  page.tick(4);
+  assert.deepEqual(page.reloads, [], "it still runs");
+  page.video.paused = true;
+  page.tick(10);
+  assert.deepEqual(page.reloads, [], "not while nothing plays");
+  page.location.href = "https://www.youtube.com/watch?v=b"; // meanwhile the user went on to another video
+  page.video.currentTime = 90.2;
+  page.video.paused = false;
+  page.tick();
+  assert.deepEqual(page.reloads, ["https://www.youtube.com/watch?v=b&t=90s"], "where it is now");
+  page.tick(10);
+  assert.equal(page.reloads.length, 1, "once");
+});
+
+test("a video Musicless was holding for the user counts as playing", () => {
+  const page = firefoxPage();
+  page.video.paused = true;
+  page.video.dataset.musiclessPlaybackHeld = "1";
+  page.control({ type: "alive" });
+  page.tick(5);
+  assert.deepEqual(page.reloads, ["https://www.youtube.com/watch?v=a&t=42s"]);
+});
+
+test("no reload for a video Musicless never routed or a muted one; elsewhere than a watch page, a plain reload", () => {
+  const unrouted = firefoxPage({ routed: false });
+  unrouted.control({ type: "alive" });
+  unrouted.tick(30);
+  assert.deepEqual(unrouted.reloads, [], "its own sound plays on without Musicless");
+  const muted = firefoxPage();
+  muted.video.muted = true;
+  muted.control({ type: "alive" });
+  muted.tick(6);
+  assert.deepEqual(muted.reloads, [], "not while the video is muted");
+  const shorts = firefoxPage({ pathname: "/shorts/a" });
+  shorts.control({ type: "alive" });
+  shorts.tick(5);
+  assert.deepEqual(shorts.reloads, ["reload"]);
+});
+
+test("once the content script has stopped, the audio is let go and no more is kept, routed or not", () => {
+  for (const routed of [true, false]) {
+    const page = firefoxPage({ routed });
+    page.video.paused = true;
+    page.control({ type: "alive" });
+    const sb = playShort(page);
+    assert.equal(bytesOf(replay(page, 1).entries), INIT.length + PASS_BYTES);
+    page.tick(5);
+    sb.timestampOffset = 3;
+    for (const cluster of CLUSTERS) sb.appendBuffer(cluster);
+    assert.equal(bytesOf(replay(page, 1).entries), INIT.length, `only the format header (routed: ${routed})`);
+  }
 });

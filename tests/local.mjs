@@ -8,7 +8,7 @@
 //   REPORT=name, VARIANTS=webm-opus,mp4-aac
 import {
   analyze, chooseRecovery, clickButton, closes, debugRequest, dump, evaluateAsUser, extensionUrl, frameState, gotoExtensionPage, launch,
-  LAG_LIMIT_MS, LAG_SPREAD_LIMIT_MS, memoryOfBrowser, newPage, readWithoutActivation, Report, setAutoStart, setSettings, sleep, uninstall, until,
+  FIREFOX, LAG_LIMIT_MS, LAG_SPREAD_LIMIT_MS, memoryOfBrowser, newPage, readWithoutActivation, Report, setAutoStart, setSettings, sleep, uninstall, until,
   waitFor, waitForExtensionPage, WORK,
 } from "./harness.mjs";
 import { existsSync, readFileSync } from "node:fs";
@@ -21,7 +21,7 @@ const report = new Report(process.env.REPORT ?? "local");
 const ARABIC = JSON.parse(readFileSync(new URL("../extension/_locales/ar/messages.json", import.meta.url), "utf8"));
 const PORT = Number(process.env.PORT ?? 8811);
 const server = await serve(MEDIA, PORT);
-const { browser, extensionId } = await launch();
+const { browser, extensionId, extensionDir } = await launch();
 
 // Starts playback without waiting for it (a held or buffering video may take a while).
 const play = (page) => page.evaluate(() => { document.querySelector("video").play().catch(() => {}); });
@@ -64,6 +64,39 @@ async function listen(page, name, seconds) {
   await sleep(seconds * 1000);
   return analyze(await dump(page, seconds - 1), name, { source });
 }
+
+// What each copy of Musicless in the page sends to the speakers, in Firefox,
+// where the page keeps each copy's outlet (test copy, diagnostics/instrument.mjs)
+// even once Firefox has stopped that copy. Meters each outlet not metered yet,
+// in the order the copies started, and says how many there are.
+const meterOutlets = (page) => page.evaluate(() => {
+  window.__musiclessMeters ??= [];
+  for (const outlet of window.__musiclessOutlets ?? []) {
+    if (window.__musiclessMeters.some((meter) => meter.outlet === outlet)) continue;
+    const analyser = new AnalyserNode(outlet.context, { fftSize: 2048 });
+    outlet.connect(analyser);
+    const data = new Float32Array(analyser.fftSize);
+    const meter = { outlet, peaks: [] };
+    setInterval(() => {
+      analyser.getFloatTimeDomainData(data);
+      let peak = 0;
+      for (const sample of data) peak = Math.max(peak, Math.abs(sample));
+      meter.peaks.push([performance.now(), peak]);
+    }, 100);
+    window.__musiclessMeters.push(meter);
+  }
+  return window.__musiclessMeters.length;
+});
+// Each metered copy's loudest over the last `seconds`, in dBFS (-200: silence).
+const outletPeaks = (page, seconds) => page.evaluate((seconds) => {
+  const since = performance.now() - seconds * 1000;
+  return window.__musiclessMeters.map(({ peaks }) => {
+    const peak = Math.max(0, ...peaks.filter(([at]) => at >= since).map(([, level]) => level));
+    return Math.round(20 * Math.log10(Math.max(peak, 1e-10)));
+  });
+}, seconds);
+const SILENT_DB = -90;
+const HEARD_DB = -50;
 
 // Sync and dropouts look right if the output follows the offline reference closely.
 // A stretch with no voice in the reference is fine as long as the output is quiet too.
@@ -881,20 +914,179 @@ await step("page autoplays before any click (the browser's own autoplay policy)"
   }
 });
 
-// Last: removes the extension from this browser.
-await step("extension removed while playing: fails closed", async () => {
+// Firefox: updates the extension in a page with a video Musicless routed, and
+// says how soon the new copy took over, and how loud the stopped copy was
+// from 0.3 s to 1.3 s after that: silent, as the new copy closes its leash at
+// once (audio.js).
+async function updateHearingStoppedCopy(page) {
+  await meterOutlets(page);
+  const started = Date.now();
+  await browser.installExtension(extensionDir);
+  while ((await meterOutlets(page)) < 2) {
+    if (Date.now() - started > 15000) throw new Error("no new copy 15 s after the update");
+    await sleep(50);
+  }
+  const takeover_ms = Date.now() - started;
+  await sleep(1300);
+  const [stopped_at_once_db] = await outletPeaks(page, 1);
+  return { takeover_ms, stopped_at_once_db };
+}
+
+// An update while a video plays. Chrome leaves the running copy without its
+// extension, and it fails closed. Firefox stops the running copy and adds the
+// new one to the page, which carries on and silences the stopped copy, whose
+// queued voice would otherwise run ahead while the new copy holds the video
+// to start (audio.js).
+await step("extension updated while playing", async () => {
+  const page = await open(BASE);
+  source = audioFile(BASE);
+  await play(page);
+  await timeUntilOn(page, "start");
+  await sleep(2000);
+  if (!FIREFOX) {
+    await browser.installExtension(extensionDir);
+    const state = await waitFor(page, (s) => s.status === "failed", { timeout: 15000, label: "failure after the update" });
+    const { paused } = await videoState(page);
+    report.record("extension updated while playing: fails closed", state.failure.reason === "updated" && paused && !!state.panel,
+      { reason: state.failure.reason, paused, message: state.panel });
+  } else {
+    const takeover = await updateHearingStoppedCopy(page);
+    await sleep(1500);
+    const { ms, state } = await timeUntilOn(page, "the new copy");
+    const a = await listen(page, "updated", 12);
+    const parts = await page.evaluate(() => ({ buttons: document.querySelectorAll(".musicless-btn").length,
+      frames: document.querySelectorAll('iframe[src*="/separator.html"]').length }));
+    report.record("extension updated while playing: the new copy carries on, and alone", state.status === "on" && parts.buttons === 1 &&
+      parts.frames === 1 && takeover.stopped_at_once_db <= SILENT_DB && good(a), { ...parts, ...takeover, status: state.status, on_ms: ms, ...a });
+  }
+  await page.close();
+});
+
+// Firefox: an update while Musicless is off for the video. The stopped copy
+// routed the video, so its own sound is heard only through that copy: it must
+// fall silent too, while the new copy carries on (Musicless on again, as for
+// every video it finds).
+if (FIREFOX) await step("extension updated while off for the video", async () => {
+  const page = await open(BASE);
+  source = audioFile(BASE);
+  await play(page);
+  await timeUntilOn(page, "start");
+  await clickButton(page);
+  await waitFor(page, (s) => s.status === "off", { timeout: 10000, label: "off" });
+  await sleep(1500);
+  await page.evaluate(() => { window.__musiclessNotReloaded = true; });
+  const takeover = await updateHearingStoppedCopy(page);
+  await sleep(1500);
+  const { ms, state } = await timeUntilOn(page, "the new copy");
+  const copies = await meterOutlets(page);
+  const a = await listen(page, "updated-off", 10);
+  const [stopped_db, new_db] = await outletPeaks(page, 6);
+  const parts = await page.evaluate(() => ({ buttons: document.querySelectorAll(".musicless-btn").length,
+    kept: window.__musiclessNotReloaded === true }));
+  report.record("extension updated while off for the video: only the new copy is heard",
+    copies === 2 && takeover.stopped_at_once_db <= SILENT_DB && stopped_db <= SILENT_DB && new_db >= HEARD_DB &&
+      state.status === "on" && parts.buttons === 1 && parts.kept && good(a),
+    { copies, ...takeover, stopped_db, new_db, status: state.status, on_ms: ms, ...parts, ...a });
+  await page.close();
+});
+
+// Firefox: an update with automatic removal off. The new copy leaves
+// Musicless off for the video the stopped copy had it on for, so the video's
+// own sound must carry on through the new copy once the stopped copy falls
+// silent, without a reload.
+if (FIREFOX) await step("extension updated with automatic removal off", async () => {
+  await setAutoStart(browser, extensionId, false);
+  try {
+    const page = await open(BASE);
+    await play(page);
+    await sleep(1500);
+    await clickButton(page);
+    await timeUntilOn(page, "started by click");
+    await sleep(2000);
+    await page.evaluate(() => { window.__musiclessNotReloaded = true; });
+    const takeover = await updateHearingStoppedCopy(page);
+    await sleep(2500);
+    const copies = await meterOutlets(page);
+    await sleep(6000);
+    const [stopped_db, new_db] = await outletPeaks(page, 5);
+    const state = await frameState(page);
+    const { paused } = await videoState(page);
+    const parts = await page.evaluate(() => ({ buttons: document.querySelectorAll(".musicless-btn").length,
+      kept: window.__musiclessNotReloaded === true }));
+    report.record("extension updated with automatic removal off: the new copy carries the video's own sound",
+      copies === 2 && takeover.stopped_at_once_db <= SILENT_DB && stopped_db <= SILENT_DB && new_db >= HEARD_DB &&
+        state.status === "off" && !paused && parts.buttons === 1 && parts.kept,
+      { copies, ...takeover, stopped_db, new_db, status: state.status, playing: !paused, ...parts });
+    await page.close();
+  } finally {
+    await setAutoStart(browser, extensionId, true);
+  }
+});
+
+// Firefox: an update while Musicless holds a video the user wants played (it
+// waits for the voice), which it marks (playback-intent.js). The new copy must
+// carry that wish on. The mark on a video the test paused stands in for a
+// hold, which ends too soon to update during.
+const markHeld = async (page) => {
+  await pause(page);
+  await sleep(300); // the copy has seen the pause
+  await page.evaluate(() => { document.querySelector("video").dataset.musiclessPlaybackHeld = "1"; });
+};
+if (FIREFOX) await step("extension updated while Musicless holds the video", async () => {
+  const page = await open(BASE);
+  source = audioFile(BASE);
+  await play(page);
+  await timeUntilOn(page, "start");
+  await markHeld(page);
+  await browser.installExtension(extensionDir);
+  const { ms, state } = await timeUntilOn(page, "the new copy");
+  await sleep(1000);
+  const { paused } = await videoState(page);
+  report.record("extension updated while Musicless holds the video: it plays on", state.status === "on" && !paused,
+    { status: state.status, on_ms: ms, playing: !paused });
+  await page.close();
+});
+
+// Last: removes the extension from this browser. Chrome leaves the running
+// copy without its extension, and it fails closed. Firefox stops it, and the
+// page's capture script reloads the page where the video was, with its sound.
+await step("extension removed while playing", async () => {
   const page = await open(BASE);
   await play(page);
   await timeUntilOn(page, "start");
-  await uninstall(browser, extensionId);
-  await sleep(2000);
-  const held = await videoState(page);
-  const panel = await page.evaluate(() => document.querySelector(".musicless-dialog:not([hidden]) .musicless-dialog__message")?.textContent ?? null);
-  await chooseRecovery(page, "original");
-  await sleep(1500);
-  const resumed = await videoState(page);
-  report.record("extension removed while playing: fails closed", held.paused && !!panel && !resumed.paused,
-    { paused: held.paused, message: panel, plays_after_choice: !resumed.paused });
+  await sleep(3000);
+  if (FIREFOX) {
+    // And a page whose video Musicless holds for the user: it reloads too.
+    const held = await open(BASE);
+    await play(held);
+    await timeUntilOn(held, "start");
+    await markHeld(held);
+    await page.bringToFront();
+    const reloaded = [page, held].map((tab) => tab.waitForNavigation({ timeout: 20000 }).then(() => true, () => false));
+    await uninstall(browser, extensionId);
+    const started = Date.now();
+    const [back, heldBack] = await Promise.all(reloaded);
+    const ms = Date.now() - started;
+    await page.waitForFunction("window.playerReady === true", { timeout: 30000 }).catch(() => {});
+    await play(page);
+    await sleep(2000);
+    const after = await videoState(page);
+    const left = await page.evaluate(() => document.querySelectorAll(".musicless-btn").length);
+    report.record("extension removed while playing: the page reloads, and plays with its own sound",
+      back && heldBack && ms < 12000 && !after.paused && left === 0,
+      { reloaded: back, held_reloaded: heldBack, reload_ms: ms, playing_after: !after.paused, buttons_after: left });
+    await held.close();
+  } else {
+    await uninstall(browser, extensionId);
+    await sleep(2000);
+    const held = await videoState(page);
+    const panel = await page.evaluate(() => document.querySelector(".musicless-dialog:not([hidden]) .musicless-dialog__message")?.textContent ?? null);
+    await chooseRecovery(page, "original");
+    await sleep(1500);
+    const resumed = await videoState(page);
+    report.record("extension removed while playing: fails closed", held.paused && !!panel && !resumed.paused,
+      { paused: held.paused, message: panel, plays_after_choice: !resumed.paused });
+  }
   await page.close();
 });
 

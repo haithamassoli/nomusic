@@ -138,3 +138,40 @@ test("a hold puts back the attribute the page bridge needs", async () => {
   assert.equal(video.paused, true);
   intent.dispose();
 });
+
+test("a hold the user wants played is marked on the video, and the next copy carries it on", async () => {
+  const MediaElement = mediaClass({ bridge: true });
+  const video = new MediaElement();
+  const earlier = new PlaybackIntent(video);
+  earlier.hold();
+  await flush();
+  assert.equal(video.dataset.musiclessPlaybackHeld, "1");
+  earlier.disposed = true; // Firefox stops that copy mid-hold, without a word to it
+  const later = new PlaybackIntent(video);
+  assert.equal(later.held, true);
+  assert.equal(later.wantsPlay, true);
+  later.release();
+  await flush();
+  assert.equal(video.paused, false, "it plays as the user wanted");
+  assert.equal(video.dataset.musiclessPlaybackHeld, undefined);
+  later.dispose();
+});
+
+test("no mark once the user pauses during a hold, or when the hold ends", async () => {
+  const MediaElement = mediaClass({ bridge: true });
+  const video = new MediaElement();
+  const intent = new PlaybackIntent(video);
+  intent.hold();
+  video.pause(); // the user's, through the page
+  await flush();
+  assert.equal(video.dataset.musiclessPlaybackHeld, undefined);
+  const later = new PlaybackIntent(video);
+  assert.equal(later.wantsPlay, false, "a paused video the next copy finds is the user's");
+  intent.dispose();
+  later.dispose();
+  const other = new MediaElement();
+  const held = new PlaybackIntent(other);
+  held.hold();
+  held.dispose({ restore: true });
+  assert.equal(other.dataset.musiclessPlaybackHeld, undefined);
+});

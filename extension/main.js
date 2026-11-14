@@ -4,6 +4,7 @@
 // with automatic removal on no music is heard while the first audio is
 // prepared.
 
+import { IN_FIREFOX, adopt, renewLeashes } from "./audio.js";
 import { Button } from "./button.js";
 import { CaptureBus } from "./capture-bus.js";
 import { Engine } from "./engine.js";
@@ -74,6 +75,7 @@ function anchor(controller) {
 
 function attach(video) {
   if (controllers.has(video)) return;
+  adopt(video); // in Firefox, a video an earlier copy routed (audio.js)
   const controller = { video, session: null, button: null, lastSource: null };
   controllers.set(video, controller);
   // The session reports changes from its constructor on, before this assignment.
@@ -119,8 +121,28 @@ function scheduleRefresh() {
   refreshTimers = [0, 150, 400, 800, 1500, 2500].map((delay) => setTimeout(refresh, delay));
 }
 
+// Firefox adds Musicless to the pages already open when it is installed,
+// enabled or updated, having stopped any earlier copy without a word to it.
+// What that copy left in the page goes first. (Chrome adds it to new pages only.)
+function clearEarlierCopy() {
+  if (!IN_FIREFOX) return;
+  Button.removeLeftovers();
+  for (const frame of document.querySelectorAll(`iframe[src^="${chrome.runtime.getURL("")}"]`)) frame.remove();
+}
+
+// A stopped copy leaves the videos it routed silent (audio.js). So in Firefox
+// this copy keeps its routed videos' sound open, and says from its start, and
+// every second, that it runs: once that goes unsaid, the page's capture script
+// reloads the page (capture.js).
+function sayAlive() {
+  renewLeashes();
+  capture.alive();
+}
+
 function start() {
+  clearEarlierCopy();
   scan(document);
+  if (IN_FIREFOX) sayAlive();
   new MutationObserver((mutations) => {
     let removed = false;
     for (const mutation of mutations) {
@@ -151,6 +173,7 @@ function start() {
     }
     engine.tidy();
     capture.consent(consented);
+    if (IN_FIREFOX) sayAlive();
   }, 1000);
   // Players appear and resize without DOM changes we can see (layout, CSS),
   // and YouTube rebuilds its controls (navigation, the miniplayer).

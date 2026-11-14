@@ -24,6 +24,7 @@ video plays, and plays them in place of the original track.
 | `intent.js` | Page world. Reports the page's `play()`/`pause()` calls, so a pause the user makes while Musicless holds the video is not undone. |
 | `content.js`, `main.js` | Built into the classic content script `content.bundle.js` by pinned, build-only esbuild. Chrome loads it directly, avoiding cross-origin module requests that can log origin errors on YouTube after an extension reload. Give every `<video>` a `Session` as soon as it appears (before it can play) and a `Button` once it has a visible player. `capture-bus.js` checks every message from the page world before anything acts on it. |
 | `session.js` | One video's music removal: follows its source, routes its audio through Web Audio (original silenced, separated voices at the page's volume), asks the engine for chunks around the playhead, schedules them on the video's clock, holds the video when a chunk is missing, fails closed. |
+| `audio.js`, `playback-intent.js` | The page's one AudioContext and each video's routing; in Firefox, the leash and taking a video over from an earlier copy (Browser quirks). The user's play or pause, kept apart from Musicless's holds. |
 | `button.js`, `content.css`, `i18n.js` | What Musicless shows on a video, in English or Arabic (`_locales/`): a button in YouTube's own control bar (or the embedded player's top row, or a Short's own row of buttons; a small corner button where a player has none), a spinner in the middle of the video while the first audio is prepared, a play button when the browser waits for a click, and the recovery dialog. It shows and hides with YouTube's controls, and ignores clicks a page script fakes. |
 | `engine.js` | The page's connection to the hidden frame; routes messages by stream; notices a frame or worker that has gone away and starts a new one; removes the frame 30 s after nothing uses it. |
 | `separator.html/js` | The hidden frame, in the extension's own origin (WebAssembly allowed, out of the page's reach). It accepts one connection, and only with a random token that page scripts cannot read: the background script (a service worker in Chrome, an event page in Firefox) makes it once, and the content script sends it only to the extension's own origin, fixed when the frame is created. Then it starts the tab worker and connects it to the shared model. |
@@ -48,6 +49,7 @@ video plays, and plays them in place of the original track.
 | Change the separation | `grid.js`, `dsp.js`, `model.js` and `tools/build_model.py`, checked independently against `tests/reference.py` and fixed quality floors. |
 | Change build inputs | `tools/dependencies.json` holds verified download/model pins; `tools/model-requirements.txt` constrains both the model build and test NumPy. |
 | Add test recording or introspection | `tests/diagnostics/`; the harness instruments a disposable extension copy. Nothing there is packaged. |
+| Carry on when Firefox updates or removes Musicless | `audio.js` (the leash and taking a video over), `main.js` (the earlier copy's leftovers, saying it runs), `playback-intent.js` (the hold mark) and `capture.js` (the reload). See Browser quirks. |
 
 Keep page-world capture separate from privileged extension code. The classic
 content bundle and worker modules have different loading and security rules.
@@ -140,7 +142,8 @@ one starts with the saved default.
 Musicless never plays the original track by itself once it is on. If it cannot
 remove the music (copy-protected audio, audio it cannot capture, a codec the
 browser cannot decode, a chunk stuck for 30 s, sound that still cannot start
-after a click, or the extension being updated under an open page), the
+after a click, or, in Chrome, the extension being updated under an open
+page; see Browser quirks for Firefox), the
 original stays silent, the video pauses, and a dialog in the middle of the
 player offers **Try again** or **Play original sound**. When only a reload can help
 (the extension was updated, the audio went by before it could be captured, the
@@ -191,6 +194,35 @@ audio per video.
 - Once an audio buffer plays, Firefox detaches the arrays `getChannelData`
   gave for it (Web Audio's "acquire the content"; Chrome does not). The
   stretch takes its own copy of a chunk with `copyFromChannel` (`stretch.js`).
+- When Musicless is removed or updated, Chrome leaves the running content
+  script in place without its extension: it notices and fails closed (above).
+  Firefox stops it without a word, while what it set up in the page goes on:
+  the audio it queued (up to half a minute) and its routing of each video,
+  through which alone the video is heard, its own sound included. So in
+  Firefox:
+  - All of a routed video's sound, its own and Musicless's, passes a gain,
+    its leash, that closes 3 s ahead unless the running copy renews it
+    (`audio.js`), so a stopped copy falls silent. The running copy renews it
+    every second for each video it routed, and when a video plays.
+  - Firefox adds the new copy to pages already open (Chrome only to new ones).
+    It first removes what the stopped copy left in the page (`main.js`,
+    `button.js`). Each copy leaves its leash on the video, in the page's
+    world, for the next: the new copy routes each video it finds one on, so
+    the video's sound carries on through it whether or not Musicless is on
+    for it, and closes that leash at once. Otherwise both would be heard
+    until it closed, the stopped copy's queued voice running ahead while the
+    new copy holds the video to start. A video the stopped copy held for the
+    user is marked (`playback-intent.js`), and the new copy plays it once
+    its voice is ready.
+    It works with the capture script the stopped copy left in the page (its
+    own stands down), so the messages between the two, the leash's name and
+    the hold mark must stay compatible from one version to the next.
+  - The content script says from its start, and every second, that it runs.
+    The page-world capture script lives on: after 5 of its own seconds
+    without that, it keeps no more audio, and once a video Musicless routed
+    (one with a leash) plays, or one Musicless held for the user waits to,
+    it reloads the page there (`capture.js`), and the video has its own sound
+    again. After an update the new copy says it, so nothing reloads.
 - Routing a media element through Web Audio cannot be undone, and a
   cross-origin file routed that way would play silence, so only Media Source
   (blob:) sources are routed; anything else is held instead.
@@ -199,7 +231,7 @@ audio per video.
 
 | Between | Channel | Messages | Checked by |
 | --- | --- | --- | --- |
-| Content script → `capture.js` | `window.postMessage`, `musicless: "control"` | `hello` (announce your streams), `consent` (whether audio may be kept), `subscribe` (replay a stream's audio, then send its appends as they come) | `capture.js` reads only these three; a page can post them too |
+| Content script → `capture.js` | `window.postMessage`, `musicless: "control"` | `hello` (announce your streams), `consent` (whether audio may be kept), `subscribe` (replay a stream's audio, then send its appends as they come), and in Firefox `alive` (this copy runs) | `capture.js` reads only these four; a page can post them too |
 | `capture.js` → content script | `window.postMessage`, `musicless: "capture"` | `stream` (an id and its `blob:` URL), `closed`, `replay` (the audio kept so far, and whether some went by unkept), `event` (one new entry) | `capture-bus.js`: shapes, types, finite numbers, sizes |
 | `intent.js` → content script | a `musicless:playback-intent` event on the `<video>` | the page's own `play()` or `pause()` | `playback-intent.js`: a boolean, nothing else |
 | Content script → service worker | `chrome.runtime.sendMessage` | `engine-token`, `open-welcome` | Only the extension's own scripts can send these |
@@ -218,10 +250,14 @@ the page's. It treats everything from that world as untrusted: messages are
 checked for shape and size before anything acts on them, and the in-player
 controls ignore clicks a script fakes. The most a page can do with forged
 messages is make a video fail closed, for example by saying its stream closed.
-It cannot make the music play while Musicless is on (the original track is
-silenced in the content script's world, which the page cannot reach), get
-around the separation, or reach the hidden frame and its workers (see the
-token above).
+In Firefox it can also make the capture script reload the page, or not reload
+it once Musicless is gone (`alive`), which the page can do itself. It cannot
+make the music play while Musicless is on (the original track is silenced in
+the content script's world, which the page cannot reach), get around the
+separation, or reach the hidden frame and its workers (see the token above).
+In Firefox the page can also reach the leash Musicless leaves on each video it
+routes, and the mark on a video it holds (Browser quirks): with them it can at
+most silence that video, or play it.
 
 The extension makes no network requests, has no remote code, and asks for one
 permission (`storage`) plus access to YouTube's pages. The release cannot

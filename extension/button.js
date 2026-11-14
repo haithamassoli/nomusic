@@ -149,7 +149,17 @@ const minimized = (host) => host.classList.contains("ytp-player-minimized");
 
 let dialogs = 0;
 
+// What buttons put in the page: their elements, and their marks on the player.
+const PARTS = ".musicless-btn, .musicless-tip, .musicless-sr-only, .musicless-notice, .musicless-scrim, .musicless-dialog";
+const MARKS = ["musicless-waiting", "musicless-blocked"];
+
 export class Button {
+  // What an earlier copy of Musicless's buttons left in the page (Firefox; main.js).
+  static removeLeftovers() {
+    for (const element of document.querySelectorAll(PARTS)) element.remove();
+    for (const host of document.querySelectorAll(MARKS.map((mark) => `.${mark}`).join())) host.classList.remove(...MARKS);
+  }
+
   constructor(video, session) {
     this.video = video;
     this.session = session;

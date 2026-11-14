@@ -5,7 +5,18 @@
 let context = null;
 const graphs = new WeakMap(); // media element -> its routing, which cannot be undone
 
-const IN_FIREFOX = chrome.runtime.getURL("").startsWith("moz-extension:");
+export const IN_FIREFOX = chrome.runtime.getURL("").startsWith("moz-extension:");
+
+// Firefox stops a copy of Musicless that is removed or updated without a word
+// to it, while what it set up in the page plays on (docs/how-it-works.md,
+// Browser quirks). So in Firefox all of a routed video's sound passes a gain,
+// its leash, that closes LEASH_SECONDS ahead unless the running copy renews
+// it. Each copy leaves the leash on the video in the page's world, where the
+// next copy finds it, routes the video too, and closes that leash at once,
+// and where the page's capture script sees which videos Musicless routed.
+const LEASH_SECONDS = 3;
+const FADE_SECONDS = 0.05;
+const LEASH_KEY = "musiclessLeash"; // capture.js reads it too
 
 export function audioContext() {
   if (!context) {
@@ -32,14 +43,84 @@ export function routeElement(video) {
     const element = ctx.createMediaElementSource(video);
     const original = ctx.createGain();
     const output = ctx.createGain();
-    element.connect(original).connect(ctx.destination);
-    output.connect(ctx.destination);
-    graph = { ctx, element, original, output };
+    const leash = IN_FIREFOX ? ctx.createGain() : null;
+    leash?.connect(ctx.destination);
+    const out = leash ?? ctx.destination;
+    element.connect(original).connect(out);
+    output.connect(out);
+    graph = { ctx, element, original, output, leash };
     graphs.set(video, graph);
-    // Once a playing video is routed, Firefox plays its own sound about
-    // 130 ms ahead of its picture until the next seek, as heard after Restore
-    // original sound. A seek to where it already is keeps the two together.
-    if (IN_FIREFOX && !video.paused && !video.seeking && video.currentTime > 0) video.currentTime = video.currentTime;
+    if (IN_FIREFOX) {
+      renewLeash(graph);
+      leaveLeash(video, leash);
+      // Timers run seldom in a background tab: playing must not wait for one.
+      video.addEventListener("play", () => renewLeash(graph));
+      // Once a playing video is routed, Firefox plays its own sound about
+      // 130 ms ahead of its picture until the next seek, as heard after Restore
+      // original sound. A seek to where it already is keeps the two together.
+      if (!video.paused && !video.seeking && video.currentTime > 0) video.currentTime = video.currentTime;
+    }
   }
   return graph;
+}
+
+// Firefox: route a video an earlier copy of Musicless routed, so its sound
+// carries on through this copy, and close that copy's leash. Its own sound
+// plays until Musicless is turned on for it.
+export function adopt(video) {
+  const earlier = !graphs.has(video) && leashLeftOn(video);
+  if (!earlier) return;
+  try {
+    routeElement(video);
+  } catch {
+    return; // Nothing else can carry its sound: the earlier copy's plays until its leash closes.
+  }
+  try {
+    closeLeashIn(earlier, 0, earlier.gain.value);
+  } catch {
+    // It closes by itself within LEASH_SECONDS.
+  }
+}
+
+// Firefox: renew the leash of each video this copy routed, whether or not
+// Musicless is on for it.
+export function renewLeashes() {
+  for (const video of document.querySelectorAll("video")) {
+    const graph = graphs.get(video);
+    if (graph) renewLeash(graph);
+  }
+}
+
+const renewLeash = (graph) => closeLeashIn(graph.leash, LEASH_SECONDS);
+
+// The leash stays at `level` for `seconds` more, then fades out.
+function closeLeashIn(leash, seconds, level = 1) {
+  const { gain, context } = leash;
+  const now = context.currentTime;
+  gain.cancelScheduledValues(now);
+  gain.setValueAtTime(level, now);
+  gain.setValueAtTime(level, now + seconds);
+  gain.linearRampToValueAtTime(0, now + seconds + FADE_SECONDS);
+}
+
+function leaveLeash(video, leash) {
+  try {
+    Object.defineProperty(video.wrappedJSObject, LEASH_KEY, { value: leash, configurable: true });
+  } catch {
+    // A later copy then leaves the video alone: it falls silent once this copy
+    // stops, until Musicless is turned on for it.
+  }
+}
+
+// The leash an earlier copy left on the video, or null. Read as the browser's
+// own GainNode, so nothing the page put there runs.
+function leashLeftOn(video) {
+  if (!IN_FIREFOX) return null;
+  try {
+    const value = Object.getOwnPropertyDescriptor(video.wrappedJSObject, LEASH_KEY)?.value;
+    const leash = value && XPCNativeWrapper(value);
+    return leash instanceof GainNode ? leash : null;
+  } catch {
+    return null;
+  }
 }

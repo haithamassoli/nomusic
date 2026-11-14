@@ -32,6 +32,28 @@ window.addEventListener("message", (event) => {
 });
 `;
 
+// In Firefox, everything a copy sends to the speakers passes one gain per
+// AudioContext, which the page can reach (window.__musiclessOutlets) even
+// after Firefox has stopped that copy: the tests listen for a stopped copy's
+// sound. Chrome's graph stays as it is.
+const AUDIO_DEBUG = `
+// (test copy) Firefox: one gain per context before the speakers, reachable from the page
+const outletsForTests = new WeakMap();
+function outletForTests(ctx) {
+  if (!IN_FIREFOX) return ctx.destination;
+  let outlet = outletsForTests.get(ctx);
+  if (!outlet) {
+    outlet = ctx.createGain();
+    outlet.connect(ctx.destination);
+    outletsForTests.set(ctx, outlet);
+    const page = window.wrappedJSObject;
+    page.__musiclessOutlets ??= cloneInto([], window);
+    page.__musiclessOutlets.push(outlet);
+  }
+  return outlet;
+}
+`;
+
 // Which model instance serves a frame, and how many tab workers it serves:
 // the browser tests check that every tab shares one model.
 const MODEL_DEBUG = `
@@ -61,6 +83,10 @@ export function instrumentExtension(dir) {
     throw new Error("capture.js no longer declares `const streams = new Map();` or `function trim(stream, limit) {`: update the harness");
   }
   writeFileSync(join(dir, "capture.js"), inspected);
+  const audio = readFileSync(join(dir, "audio.js"), "utf8");
+  const routing = audio.match(/^export function routeElement\(video\) \{\n[\s\S]*?\n\}\n/m)?.[0];
+  if (!routing?.includes("ctx.destination")) throw new Error("audio.js no longer routes to `ctx.destination` in routeElement: update the harness");
+  writeFileSync(join(dir, "audio.js"), audio.replace(routing, routing.replaceAll("ctx.destination", "outletForTests(ctx)")) + AUDIO_DEBUG);
   const main = readFileSync(join(dir, "main.js"), "utf8");
   if (!/^import \{[^}]*\bSession\b[^}]*\} from "\.\/session\.js";$/m.test(main) || !main.includes("const controllers = new Map();")) {
     throw new Error("main.js no longer imports Session or declares `const controllers = new Map();`: update the harness");
