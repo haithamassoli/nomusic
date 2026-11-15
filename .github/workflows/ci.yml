@@ -45,9 +45,11 @@ jobs:
           tests/.venv/bin/python tests/build_media.py synthetic "$MUSICLESS_TEST_DIR/media/synth" 240
           tests/.venv/bin/python tests/build_media.py long "$MUSICLESS_TEST_DIR/media/long" 25
       - name: Package
+        # The tests run the Chrome zip, as in the Release workflow.
         run: |
           ./scripts/package.sh
-          unzip -q dist/musicless-*.zip -d "$RUNNER_TEMP/musicless"
+          version=$(python3 -c 'import json; print(json.load(open("extension/manifest.json"))["version"])')
+          unzip -q "dist/musicless-$version.zip" -d "$RUNNER_TEMP/musicless"
       - name: Local interface checks of the package
         working-directory: tests
         run: MUSICLESS_EXTENSION="$RUNNER_TEMP/musicless" node interface.mjs
