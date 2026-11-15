@@ -11,7 +11,7 @@ export function buildContent(directory = fileURLToPath(new URL("../extension/", 
     bundle: true,
     format: "iife",
     platform: "browser",
-    target: "chrome111",
+    target: ["chrome111", "firefox153"],
     legalComments: "inline",
     banner: { js: `/*
  * Includes SoundTouch JS (Mozilla Public License 2.0).

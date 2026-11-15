@@ -653,25 +653,7 @@ async function failsClosed(name, query, variant, expectReason) {
   });
 }
 if (h264) await failsClosed("plain MP4 file: fails closed until the user chooses", "", "progressive", "source");
-// The copy-protected page plays ClearKey-encrypted Opus in MP4 through Media
-// Source, which Firefox 140 refuses ("Can't play type"), Musicless or not.
-async function pageLoads(variant) {
-  const page = await newPage(browser);
-  try {
-    await page.goto(`http://127.0.0.1:${PORT}/player.html?media=${SET}&variant=${variant}`);
-    for (const started = Date.now(); Date.now() - started < 15000; await sleep(250)) {
-      if (await page.evaluate(() => window.playerReady === true)) return true;
-      if (page.logs.some((line) => line.includes("NotSupportedError"))) return false;
-    }
-    return true; // a page that never loads fails its steps
-  } finally {
-    await page.close();
-  }
-}
-const protectedPlays = await pageLoads("drm");
-const noProtected = "this browser cannot play the test page's ClearKey audio";
-if (protectedPlays) await failsClosed("copy-protected (ClearKey) audio: fails closed", "", "drm", "protected");
-else report.skip("copy-protected (ClearKey) audio: fails closed", noProtected);
+await failsClosed("copy-protected (ClearKey) audio: fails closed", "", "drm", "protected");
 await failsClosed("Media Source hidden in another frame: fails closed", "&realm=frame", BASE, "uncaptured");
 if (workerMedia) await failsClosed("Media Source in a worker (srcObject): fails closed", "&worker=1", BASE, "source");
 else report.skip("Media Source in a worker (srcObject): fails closed", "this browser has no Media Source in workers");
@@ -720,8 +702,7 @@ await step("a closed failure dialog comes back on play", async () => {
 });
 
 // Trying again in place (a slow computer, an error) is covered by the unit tests.
-if (!protectedPlays) report.skip("a failure nothing can help offers only original playback, and a stray key does not start it", noProtected);
-else await step("a failure nothing can help offers only original playback, and a stray key does not start it", async () => {
+await step("a failure nothing can help offers only original playback, and a stray key does not start it", async () => {
   const page = await open("drm");
   await play(page);
   await waitFor(page, (s) => s.status === "failed", { timeout: 20000, label: "failure" });

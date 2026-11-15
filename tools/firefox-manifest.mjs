@@ -4,13 +4,13 @@
 //
 // Firefox runs background.scripts (an event page) where Chrome runs the
 // service worker. It needs an add-on ID, which can never change once on Firefox
-// Add-ons, and new add-ons declare what data they collect: none. 140 is the
-// first Firefox with that declaration; main-world content scripts (128) and
-// WebCodecs audio decoding (130) came before it.
+// Add-ons, and new add-ons declare what data they collect: none. 153 is the
+// oldest Firefox Mozilla supports.
 //
 // Usage: node tools/firefox-manifest.mjs <manifest.json>  prints it
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 export const GECKO_ID = "musicless@ieasybooks";
 
@@ -22,13 +22,13 @@ export function firefoxManifest(chrome) {
   }
   firefox.browser_specific_settings = { gecko: {
     id: GECKO_ID,
-    strict_min_version: "140.0",
+    strict_min_version: "153.0",
     data_collection_permissions: { required: ["none"] },
   } };
   return firefox;
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
   const chrome = JSON.parse(readFileSync(process.argv[2], "utf8"));
   process.stdout.write(`${JSON.stringify(firefoxManifest(chrome), null, 2)}\n`);
 }

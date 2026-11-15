@@ -16,7 +16,7 @@ Security vulnerabilities go through the private channel in
 ## Build
 
 You need Node.js/npm, `curl`, `tar`, and `python3`. Browser tests also need `ffmpeg`
-and Google Chrome, Edge, Brave, or another Chromium browser.
+and Google Chrome, Edge, Brave, another Chromium browser, or Firefox 153 or newer.
 
 ```sh
 git clone https://github.com/ieasybooks/musicless
@@ -30,6 +30,9 @@ Those directories are not in git. Do not commit them.
 
 Load the `extension` folder at `chrome://extensions` with Developer mode
 on, then choose Load unpacked. Reload any YouTube tab that was already open.
+Firefox needs its own manifest: run `./scripts/package.sh`, open
+`about:debugging`, choose **This Firefox**, **Load Temporary Add-on**, and
+`dist/musicless-<version>-firefox.zip`.
 
 The first time, choose **Turn on Musicless** on the welcome page. Until you
 do, Musicless does not remove music.

@@ -20,7 +20,7 @@ Musicless was called nomusic before its first release.
 ## Install
 
 Musicless works on a computer in Chrome, Edge, Brave and other Chromium
-browsers (version 111 or newer), and in Firefox (version 140 or newer). It does
+browsers (version 111 or newer), and in Firefox (version 153 or newer). It does
 not run in phone browsers.
 
 ### Chrome Web Store
