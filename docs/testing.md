@@ -35,12 +35,13 @@ extension's language from its own, so the Arabic checks need an Arabic
 Firefox: `FIREFOX_AR=/path/to/it`. A step a browser cannot run (Media Source
 in a worker, in Firefox) is reported as skipped. In Firefox, Musicless's sound
 may be 45 ms from the video's own sound rather than 30 ms, and vary by 45 ms
-rather than 40 (see `LAG_LIMIT_MS` in `harness.mjs`). `loader.mjs` checks
-warnings only Chrome gives, and the store screenshots come from Chrome. For
-concurrent local runs, choose separate `PORT` values and work folders;
-interface selects a free port by default. The memory, soak, YouTube, controls
-and screenshot scripts currently use fixed ports or live pages and should be
-run separately.
+rather than 40 (see `LAG_LIMIT_MS` in `harness.mjs`). The YouTube suite
+(`youtube.mjs`) lets it vary by 100 ms in Firefox, since Firefox's readings
+there jump from run to run. `loader.mjs` checks warnings only Chrome gives, and
+the store screenshots come from Chrome. For concurrent local runs, choose
+separate `PORT` values and work folders; interface selects a free port by
+default. The memory, soak, YouTube, controls and screenshot scripts currently
+use fixed ports or live pages and should be run separately.
 
 ## Unit tests
 
