@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Live streams play with the music removed. Before, most live streams in
+  Chrome, and some in Firefox, stayed paused at the start and then showed
+  “Couldn’t remove the music”.
+
 ## [1.1.0] - 2026-11-15
 
 ### Added

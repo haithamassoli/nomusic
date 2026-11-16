@@ -15,10 +15,9 @@ import { applyFades, chunkIndex, chunkStart, RATE, WINDOW_SAMPLES, WINDOW_SECOND
 const WARMUP_SECONDS = 0.25; // decoder pre-roll before a window starts
 const GAP_TOLERANCE = 0.005;
 const LEAD_TOLERANCE = 0.3; // the page asks from 0.25 s before the playhead
-// Encoded audio kept around the playhead. Players hold at most ~10 minutes of
-// audio in their own buffers; seeking further makes them append it again.
+// Encoded audio kept behind the playhead. Players hold at most ~10 minutes of
+// audio in their own buffers; seeking further back makes them append it again.
 const KEEP_BEHIND_SECONDS = 900;
-const KEEP_AHEAD_SECONDS = 900;
 const MAX_STREAM_BYTES = 64 * 2 ** 20; // far more than 30 minutes of the audio players send
 let port = null;
 let model = null;
@@ -234,8 +233,10 @@ function onEntry(stream, entry) {
   }
 }
 
-// Frames far from the playhead, which the page is unlikely to need: beyond
-// KEEP_BEHIND/AHEAD_SECONDS, and the farthest past MAX_STREAM_BYTES.
+// Frames the page is unlikely to need: more than KEEP_BEHIND_SECONDS behind the
+// playhead, and the farthest from it past MAX_STREAM_BYTES. Audio far ahead
+// stays: the position can be out of date, as on a live stream, whose audio
+// arrives while the video is still at 0, before it jumps to the live edge.
 function evict(stream) {
   const list = stream.frames;
   const { position } = stream;
@@ -243,7 +244,6 @@ function evict(stream) {
   let end = list.length;
   let bytes = stream.bytes;
   while (first < end && list[first].time + list[first].duration < position - KEEP_BEHIND_SECONDS) bytes -= list[first++].data.length;
-  while (end > first && list[end - 1].time > position + KEEP_AHEAD_SECONDS) bytes -= list[--end].data.length;
   while (end > first && bytes > MAX_STREAM_BYTES) {
     if (position - list[first].time > list[end - 1].time - position) bytes -= list[first++].data.length;
     else bytes -= list[--end].data.length;

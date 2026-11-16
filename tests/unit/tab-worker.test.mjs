@@ -554,22 +554,39 @@ test("audio appended right after a made chunk does not change it", async () => {
   assert.deepEqual(w.changed(), []);
 });
 
-test("audio far from the playhead and past the byte limit is let go", async () => {
+test("audio far behind the playhead and past the byte limit is let go", async () => {
   const w = workerSandbox();
   w.start();
   w.ready();
   w.stream(1);
-  w.want(1, [], { position: 100 });
+  w.want(1, [], { position: 1100 });
   const frames = (from, count, size) => Array.from({ length: count }, (_, i) => ({ time: from + i * 0.02, duration: 0.02, data: new Uint8Array(size) }));
-  w.addRaw(1, frames(100, 50, 100));
-  w.addRaw(1, frames(1100, 50, 100)); // 1000 s ahead
+  w.addRaw(1, frames(100, 50, 100)); // 1000 s behind
+  w.addRaw(1, frames(1100, 50, 100));
   await w.advance();
   assert.equal(w.held(1).frames, 50);
-  assert.ok(w.held(1).last < 102);
-  w.addRaw(1, frames(102, 80, 2 ** 20)); // 80 MiB of "frames" right ahead of the playhead
+  assert.equal(w.held(1).first, 1100);
+  w.addRaw(1, frames(1102, 80, 2 ** 20)); // 80 MiB of "frames" right ahead of the playhead
   await w.advance();
   assert.ok(w.held(1).bytes <= 64 * 2 ** 20, `${w.held(1).bytes / 2 ** 20} MiB`);
-  assert.equal(w.held(1).first, 100, "the farthest went first");
+  assert.equal(w.held(1).first, 1100, "the farthest went first");
+});
+
+test("a live stream's audio, sent while the video is still at 0, is kept for the live edge", async () => {
+  const w = workerSandbox();
+  w.start();
+  w.ready();
+  w.stream(1);
+  w.want(1, [], { position: 0, duration: Infinity }); // before the player jumps to the live edge
+  w.feed(1, 30, { from: 46790 });
+  await w.advance();
+  assert.equal(w.held(1).first, 46790);
+  const k = grid.chunkIndex(46790);
+  w.want(1, [{ k, from: 46790 }], { position: 46790, duration: Infinity });
+  await w.advance();
+  w.answer();
+  await w.advance();
+  assert.deepEqual(w.chunks(1).map((message) => message.k), [k], "the chunk at the live edge is made");
 });
 
 test("a decoder that fails is closed, and the stream fails", async () => {
