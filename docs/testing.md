@@ -164,9 +164,12 @@ node youtube.mjs
 ```
 
 Live YouTube pages: a song, a tutorial (the button, seeks, fullscreen, the next
-video through YouTube's own navigation), a vlog at 1.5x, a heavy song, a 24/7
-live stream, Shorts, muted inline previews and an embedded player. Ads and bot
-checks make this suite noisy: steps an ad interrupted are retried once.
+video through YouTube's own navigation), a vlog at 1.5x, a heavy song, the
+live stream of a 24/7 news channel (the first of a few with a live stream that
+plays here), Shorts, muted inline previews and an embedded player. Ads and bot
+checks make this suite noisy: steps an ad interrupted are retried once. The
+reopened tutorial and the live stream first wait out an ad; the seek steps and
+the live stream fail if an ad plays while they listen.
 
 Headless YouTube treats the browser as a bot, also without Musicless installed: it
 stops serving a video about a minute into playback ("Something went wrong") and

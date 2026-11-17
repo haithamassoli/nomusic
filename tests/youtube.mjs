@@ -14,7 +14,8 @@ const PORT = 8812;
 const server = await serve(WORK, PORT);
 const { browser } = await launch();
 const isOn = (s) => s.status === "on" && !s.holding;
-const good = (a) => a.over_silence === 0 && ((a.windows === 0 && a.reference_db < -40 && a.output_db < -40) ||
+// Silence passes only if the video played: a paused, buffering or held video is silent too.
+const good = (a) => a.over_silence === 0 && ((a.windows === 0 && a.played && a.reference_db < -40 && a.output_db < -40) ||
   (a.windows > 0 && Math.abs(a.lag_ms) <= LAG_LIMIT_MS && a.lag_spread_ms <= LAG_SPREAD_LIMIT_MS && a.corr >= 0.8 && a.silent_gaps === 0 && a.dropouts === 0));
 
 // A step an ad interrupted is retried once. The first attempt stays in the
@@ -23,7 +24,7 @@ async function step(name, fn, { retry = false } = {}) {
   try {
     await fn();
   } catch (error) {
-    report.record(name, false, { error: error.message.slice(0, 500) });
+    report.record(name, false, { error: error.message.slice(0, 500), ...error.analysis });
   }
   const last = report.rows[report.rows.length - 1];
   if (retry && last && !last.ok && last.ad_during) {
@@ -46,7 +47,11 @@ async function openPage(url) {
 }
 
 async function openWatch(id, start = 0) {
-  const page = await openPage(`https://www.youtube.com/watch?v=${id}${start ? `&t=${start}s` : ""}`);
+  return untilPlaying(await openPage(`https://www.youtube.com/watch?v=${id}${start ? `&t=${start}s` : ""}`));
+}
+
+// Wait until Musicless has started and the video plays on an open watch page.
+async function untilPlaying(page) {
   await page.waitForSelector("video", { timeout: 30000 });
   const blocked = await page.evaluate(() => /confirm you.?re not a bot|sign in to confirm/i.test(document.body.innerText));
   if (blocked) throw new Error("YouTube bot check blocked playback");
@@ -73,6 +78,13 @@ async function waitForPlaying(page, timeout = 60000, adPatience = 20000) {
   }
   const blocked = await page.evaluate(() => /confirm you.?re not a bot|sign in to confirm/i.test(document.body.innerText));
   throw new Error(`video did not start playing: ${JSON.stringify({ ...last, blocked, url: page.url() })}`);
+}
+
+// Wait out an ad until the video itself plays. Returns whether an ad was still playing.
+async function waitOutAd(page) {
+  const ad = await page.evaluate(() => !!document.querySelector(".ad-showing"));
+  if (ad) await waitForPlaying(page, 120000, Infinity);
+  return ad;
 }
 
 async function timeUntilOn(frame, label, timeout = 60000) {
@@ -102,6 +114,10 @@ async function listen(frame, name, seconds) {
   const a = analyze(await dump(frame, seconds - 1), name);
   a.ad_during = timeline.some((row) => row.ad);
   a.timeline = timeline.map((row) => row.error ?? `${row.t}${row.paused ? "p" : ""}${row.rs < 3 ? `r${row.rs}` : ""}${row.ad ? "A" : ""}${row.muted ? "m" : ""}${row.videos > 1 ? `v${row.videos}` : ""}:${row.musicless[0]}`).join(" ");
+  // Whether the video moved on in most samples, rather than standing paused, buffering or held.
+  a.played = timeline.filter((row, i) => i > 0 && row.t !== timeline[i - 1].t).length > timeline.length / 2;
+  // A video Musicless failed on plays nothing, which no check should accept.
+  if (timeline.some((row) => row.musicless === "failed")) throw Object.assign(new Error("Musicless failed while listening"), { analysis: a });
   return a;
 }
 
@@ -147,11 +163,14 @@ await step("Tutorial: the button turns it off and on again", async () => {
 // went wrong", also without Musicless), and never loads a new position after a seek.
 // So the steps below use a fresh page and stay inside the audio the player already
 // buffered; seeking into unloaded audio is covered by local.mjs.
+// A second load in one session often starts with an ad, and the steps must seek in
+// the video, not in the ad.
 await step("Tutorial: reopened for the next steps", async () => {
   await tutorial?.close();
   ({ page: tutorial } = await openWatch("6mxjfDmxTTw", 60));
-  const { ms } = await timeUntilOn(tutorial, "first audio");
-  report.record("Tutorial: reopened for the next steps", true, { first_audio_ms: ms });
+  const adFirst = await waitOutAd(tutorial);
+  const { ms, state } = await timeUntilOn(tutorial, "first audio");
+  report.record("Tutorial: reopened for the next steps", isOn(state), { ad_first: adFirst, first_audio_ms: ms });
 });
 
 const seekTo = (page, t) => page.evaluate((t) => document.getElementById("movie_player").seekTo(t, true), t);
@@ -174,7 +193,7 @@ await step("Tutorial: seek ahead within loaded audio", async () => {
   await seekTo(tutorial, target);
   const { ms } = await timeUntilOn(tutorial, "after seek");
   const a = await listen(tutorial, "yt-tutorial-seek", 12);
-  report.record("Tutorial: seek ahead within loaded audio", good(a), { from: Math.round(t), to: Math.round(target), resume_ms: ms, ...a });
+  report.record("Tutorial: seek ahead within loaded audio", !a.ad_during && good(a), { from: Math.round(t), to: Math.round(target), resume_ms: ms, ...a });
 });
 
 await step("Tutorial: seek back", async () => {
@@ -184,7 +203,7 @@ await step("Tutorial: seek back", async () => {
   await seekTo(tutorial, target);
   const { ms } = await timeUntilOn(tutorial, "after seek back");
   const a = await listen(tutorial, "yt-tutorial-back", 12);
-  report.record("Tutorial: seek back", good(a), { from: Math.round(t), to: Math.round(target), resume_ms: ms, ...a });
+  report.record("Tutorial: seek back", !a.ad_during && good(a), { from: Math.round(t), to: Math.round(target), resume_ms: ms, ...a });
 });
 
 await step("Tutorial: fullscreen keeps the button on the player", async () => {
@@ -257,14 +276,33 @@ await step("Heavy song: starts by itself", async () => {
   await page.close();
 }, { retry: true });
 
+// 24/7 news channels, tried in order. A channel's /live address plays its current
+// stream, so the step outlives any one stream.
+const LIVE_CHANNELS = ["aljazeeraenglish", "dwnews", "SkyNews"];
+
+async function openLive() {
+  for (const channel of LIVE_CHANNELS) {
+    const page = await openPage(`https://www.youtube.com/@${channel}/live`);
+    // A stream can be live but not play here (in this region, say): try the next one.
+    const video = await page.waitForFunction(() => {
+      const response = window.ytInitialPlayerResponse;
+      return response?.playabilityStatus?.status === "OK" && response.videoDetails?.isLive && response.videoDetails.videoId;
+    }, { timeout: 15000 }).then((handle) => handle.jsonValue(), () => null);
+    if (video) return { channel, video, ...(await untilPlaying(page)) };
+    await page.close();
+  }
+  throw new Error(`none of ${LIVE_CHANNELS.join(", ")} has a live stream that plays here`);
+}
+
 await step("Live stream (24/7 channel)", async () => {
   // A long-running live stream: large timestamps and an init segment with every fragment.
-  const { page } = await openWatch("SkjgMm6xRbg");
+  const { channel, video, page } = await openLive();
+  const adFirst = await waitOutAd(page);
   const live = await page.evaluate(() => !!document.querySelector(".ytp-live"));
   const { ms, state } = await timeUntilOn(page, "first audio", 90000);
   const a = await listen(page, "yt-live", 20);
-  report.record("Live stream (24/7 channel)", good(a), {
-    live, position_s: Math.round(state.currentTime), first_audio_ms: ms, frames: state.timings.map((t) => t.frames), ...a,
+  report.record("Live stream (24/7 channel)", !a.ad_during && good(a), {
+    channel, video, ad_first: adFirst, live, position_s: Math.round(state.currentTime), first_audio_ms: ms, frames: state.timings.map((t) => t.frames), ...a,
   });
   await page.close();
 }, { retry: true });
