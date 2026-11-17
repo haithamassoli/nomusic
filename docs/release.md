@@ -182,10 +182,9 @@ section, and in the repository homepage, only after the listing is live.
 
 Open <https://addons.mozilla.org/developers/> with the ieasybooks Mozilla
 account and upload the verified `musicless-<version>-firefox.zip` as a new
-version of Musicless (the first time: **Submit a New Add-on**, **On this
-site**). Choose Firefox on the desktop only: Musicless does not run on
-phones. Its add-on ID, `musicless@ieasybooks` in the Firefox manifest, can
-never change.
+version of Musicless. Choose Firefox on the desktop only: Musicless does not
+run on phones. Its add-on ID, `musicless@ieasybooks` in the Firefox manifest,
+can never change.
 
 Mozilla asks for the source of generated files, and `content.bundle.js` is
 built. Upload the tag's source, `git archive --format=zip -o musicless-<version>-source.zip v<version>`,
@@ -193,11 +192,20 @@ and give this build note: "Run ./setup.sh (Node.js 24 with npm, curl, tar, Pytho
 ./scripts/package.sh; it writes dist/musicless-<version>-firefox.zip. The model
 and ONNX Runtime files are downloaded and checked against the SHA-256 values in
 tools/dependencies.json." Use the same name, summary, detailed description,
-screenshots and privacy policy as for Chrome ([store listing](store-listing.md));
-its privacy practices and reviewer notes are written for Chrome's dashboard.
-Listed versions go public when Mozilla approves them, sometimes within
-minutes. The first time, put the listing URL in the README's Firefox Add-ons
-section once it is live.
+English screenshots, homepage, support link and privacy policy as for Chrome
+([store listing](store-listing.md)); its privacy practices and reviewer notes
+are written for Chrome's dashboard. The listing is in English only: Mozilla
+offers no Arabic listing text. Listed versions go public when Mozilla approves
+them, sometimes within minutes.
+
+The first time only:
+
+- Choose **Submit a New Add-on**, **On this site**, instead of a new version.
+- On **Edit Product Page**, upload `docs/store/store-icon-128.png` as the
+  listing's icon (Mozilla does not take it from the zip), and enter the Chrome
+  listing's contact email as the support email: the privacy policy sends
+  privacy questions to the email on the store listing.
+- Once the listing is live, put its URL in the README's Firefox Add-ons section.
 
 ## 7. Edge Add-ons
 
