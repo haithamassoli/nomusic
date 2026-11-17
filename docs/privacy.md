@@ -52,9 +52,7 @@ Last updated: 14 November 2026.
 
 ## العربية
 
-**Needs native review.** The English text above is the policy. This
-translation should say the same things. A native speaker should review it
-before the store submission. In Arabic the product is called «بلا موسيقى».
+هذه ترجمة عربية للسياسة. النص الإنجليزي هو نص سياسة الخصوصية.
 
 تزيل إضافة «بلا موسيقى» موسيقى الخلفية أثناء تشغيل مقاطع YouTube على حاسوبك. يتولى صيانتها
 صاحب <https://github.com/ieasybooks/musicless>.

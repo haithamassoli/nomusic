@@ -7,10 +7,6 @@ is for review by a native speaker; the Arabic is Modern Standard Arabic, plain a
 `tests/unit/translations.test.mjs` checks that the table matches both catalogs.
 The bundled privacy policy has its own English and Arabic text in `extension/privacy.html`.
 
-Arabic activation labels (`control_setup`, `consent_accept`, `done_heading`) remain drafts awaiting native review.
-
-The revised default-setting passages in the Arabic store listing and help also await native review.
-
 Conventions
 - In Arabic the extension is called بلا موسيقى ("without music"). Arabic text never uses
   Musicless or a transliteration of it. Put the name in guillemets so it reads as a name, as in
@@ -71,22 +67,22 @@ Conventions
 | `consent_text` | Musicless uses the audio from the YouTube videos you watch to remove most of the music, all on your computer. It never saves or uploads the audio. Your browser may sync your settings. | <div dir="rtl">تستخدم إضافة «بلا موسيقى» صوت فيديوهات YouTube التي تشاهدها لإزالة معظم الموسيقى، على حاسوبك فقط. لا تحفظ الصوت ولا ترسله إلى أي مكان. قد يزامن متصفحك إعداداتك.</div> | Before consent, explain that the videos’ audio is used only on the computer to remove most music, never saved or uploaded, and settings may sync through the browser’s sync. Arabic says لا ترسله rather than ترفعه, which can mean turning up the volume. Keep the no-break space in فيديوهات YouTube. |
 | `consent_accept` | Turn on Musicless | <div dir="rtl">تفعيل «بلا موسيقى»</div> | The affirmative choice under the local-audio disclosure. |
 | `done_heading` | Musicless is on | <div dir="rtl">تم تفعيل «بلا موسيقى»</div> | After consent; also the title when an already-open video needs reloading. |
-| `done_step1_title` | Play any video. | <div dir="rtl">شغّل أي فيديو.</div> | Draft Arabic: native review required. First next-step title when automatic removal is on. |
-| `done_step1_text` | The music is removed automatically. | <div dir="rtl">تُزال الموسيقى تلقائيًا.</div> | Draft Arabic: native review required. First next-step explanation when automatic removal is on. |
-| `done_step2_title` | Give it a few seconds. | <div dir="rtl">انتظر بضع ثوانٍ.</div> | Draft Arabic: native review required. Second next-step title: allow a short preparation wait. |
-| `done_step2_text` | Each video waits briefly at the start while the music is removed. | <div dir="rtl">ينتظر كل فيديو قليلًا في بدايته حتى تُزال الموسيقى.</div> | Draft Arabic: native review required. Second next-step explanation: the video waits while music is removed. |
-| `done_step3_title` | Restore the original sound. | <div dir="rtl">استعد الصوت الأصلي.</div> | Draft Arabic: native review required. Third next-step title when automatic removal is on. |
-| `done_step3_text` | Click {icon} in the player. Only that video changes. | <div dir="rtl">اضغط على {icon} في المشغّل. يتغيّر هذا الفيديو فقط.</div> | Draft Arabic: native review required. Third next-step explanation when automatic removal is on. Preserve {icon}; it becomes the crossed-out note. |
-| `done_step1_off_title` | Pick a video. | <div dir="rtl">اختر فيديو.</div> | Draft Arabic: native review required. First next-step title when automatic removal is off. |
-| `done_step1_off_text` | Click {icon} in the player to remove its music. | <div dir="rtl">اضغط على {icon} في المشغّل لإزالة موسيقاه.</div> | Draft Arabic: native review required. First next-step explanation when automatic removal is off. Preserve {icon}; it becomes the plain note. |
-| `done_step3_off_title` | Change the default. | <div dir="rtl">غيّر الإعداد الافتراضي.</div> | Draft Arabic: native review required. Third next-step title when automatic removal is off. |
-| `done_step3_off_text` | Open Musicless from the toolbar. | <div dir="rtl">افتح «بلا موسيقى» من شريط الأدوات.</div> | Draft Arabic: native review required. Third next-step explanation when automatic removal is off. |
+| `done_step1_title` | Play any video. | <div dir="rtl">شغّل أي فيديو.</div> | First next-step title when automatic removal is on. |
+| `done_step1_text` | The music is removed automatically. | <div dir="rtl">تُزال الموسيقى تلقائيًا.</div> | First next-step explanation when automatic removal is on. |
+| `done_step2_title` | Give it a few seconds. | <div dir="rtl">انتظر بضع ثوانٍ.</div> | Second next-step title: allow a short preparation wait. |
+| `done_step2_text` | Each video waits briefly at the start while the music is removed. | <div dir="rtl">ينتظر كل فيديو قليلًا في بدايته حتى تُزال الموسيقى.</div> | Second next-step explanation: the video waits while music is removed. |
+| `done_step3_title` | Restore the original sound. | <div dir="rtl">استعد الصوت الأصلي.</div> | Third next-step title when automatic removal is on. |
+| `done_step3_text` | Click {icon} in the player. Only that video changes. | <div dir="rtl">اضغط على {icon} في المشغّل. يتغيّر هذا الفيديو فقط.</div> | Third next-step explanation when automatic removal is on. Preserve {icon}; it becomes the crossed-out note. |
+| `done_step1_off_title` | Pick a video. | <div dir="rtl">اختر فيديو.</div> | First next-step title when automatic removal is off. |
+| `done_step1_off_text` | Click {icon} in the player to remove its music. | <div dir="rtl">اضغط على {icon} في المشغّل لإزالة موسيقاه.</div> | First next-step explanation when automatic removal is off. Preserve {icon}; it becomes the plain note. |
+| `done_step3_off_title` | Change the default. | <div dir="rtl">غيّر الإعداد الافتراضي.</div> | Third next-step title when automatic removal is off. |
+| `done_step3_off_text` | Open Musicless from the toolbar. | <div dir="rtl">افتح «بلا موسيقى» من شريط الأدوات.</div> | Third next-step explanation when automatic removal is off. |
 | `done_text` | If YouTube was already open, reload that page. | <div dir="rtl">إذا كان YouTube مفتوحًا قبل التفعيل، فأعد تحميل صفحته.</div> | If YouTube was open before activation, reload that page. The conditional avoids asking users to reload unnecessarily. |
 | `done_open` | Open YouTube | <div dir="rtl">فتح YouTube</div> | Button that opens youtube.com in the same tab (verbal noun فتح). |
 | `done_back` | Back to the video | <div dir="rtl">العودة إلى الفيديو</div> | Button instead of "Open YouTube" when the page was opened from a video's button: goes back to that tab and reloads it where the video was (verbal noun العودة). |
 | `popup_autostart_label` | Remove music by default | <div dir="rtl">إزالة الموسيقى افتراضيًا</div> | The default for every video the user opens; changing it doesn't change the video already playing. |
-| `popup_default_on` | Music is removed from every video you open. Click {icon} in a video to restore its original sound. | <div dir="rtl">تُزال الموسيقى من كل فيديو تفتحه. اضغط على {icon} في أي فيديو لاستعادة صوته الأصلي.</div> | Draft Arabic: native review required. Helper when the default is on. Preserve {icon}; it becomes the crossed-out note. |
-| `popup_one_video` | Every video you open keeps its original sound. Click {icon} in a video to remove its music. | <div dir="rtl">كل فيديو تفتحه يحتفظ بصوته الأصلي. اضغط على {icon} في أي فيديو لإزالة موسيقاه.</div> | Draft Arabic: native review required. Helper when the default is off. Preserve {icon}; it becomes the plain note. |
+| `popup_default_on` | Music is removed from every video you open. Click {icon} in a video to restore its original sound. | <div dir="rtl">تُزال الموسيقى من كل فيديو تفتحه. اضغط على {icon} في أي فيديو لاستعادة صوته الأصلي.</div> | Helper when the default is on. Preserve {icon}; it becomes the crossed-out note. |
+| `popup_one_video` | Every video you open keeps its original sound. Click {icon} in a video to remove its music. | <div dir="rtl">كل فيديو تفتحه يحتفظ بصوته الأصلي. اضغط على {icon} في أي فيديو لإزالة موسيقاه.</div> | Helper when the default is off. Preserve {icon}; it becomes the plain note. |
 | `link_help` | Help | <div dir="rtl">مساعدة</div> | Link to the help (how Musicless works, what to do); reporting a problem is one link further. مساعدة without the article, as Google's menus. |
 | `link_help_url` | https://github.com/ieasybooks/musicless#using-musicless | <div dir="rtl">https://github.com/ieasybooks/musicless/blob/main/docs/help.ar.md</div> | Not translated as text: the address of the help in this language (README's "Using Musicless" in English, docs/help.ar.md in Arabic). |
 | `link_privacy` | Privacy policy | <div dir="rtl">سياسة الخصوصية</div> | The published privacy policy. |

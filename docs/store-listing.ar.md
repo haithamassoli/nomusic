@@ -1,10 +1,9 @@
 # قائمة المتجر بالعربية
 
-**Needs native review.** This is Modern Standard Arabic for the Chrome Web
-Store Arabic locale. It states the same features, limits, and privacy claims
-as [store-listing.md](store-listing.md). Do not submit it until a native
-speaker has reviewed it. Reviewer-only permission answers stay in the English
-file.
+This is Modern Standard Arabic for the Chrome Web Store Arabic locale. It
+states the same features, limits, and privacy claims as
+[store-listing.md](store-listing.md). Reviewer-only permission answers stay in
+the English file.
 
 The name (`بلا موسيقى`) and the summary are the manifest `name` and
 `description` from `extension/_locales/ar/messages.json`, so the package

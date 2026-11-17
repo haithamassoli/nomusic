@@ -140,10 +140,8 @@ developer account and update the existing Musicless item. Confirm that
 
 Upload the verified release zip. Use the listing, Arabic locale, privacy,
 and reviewer notes in [store-listing.md](store-listing.md) and
-[store-listing.ar.md](store-listing.ar.md). Arabic text still marked
-**Needs native review** (the listing, the help page, the privacy policy's
-translation, and the labels [translations.md](translations.md) lists), and
-any changed Arabic wording, needs a native speaker's review before submission.
+[store-listing.ar.md](store-listing.ar.md). Any changed Arabic wording needs
+a native speaker's review before submission.
 
 A GitHub Release does not update copies installed from the store. Each
 store must receive the verified zip for the new version.

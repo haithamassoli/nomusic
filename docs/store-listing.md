@@ -1,10 +1,9 @@
 # Store listing (Chrome Web Store)
 
 Paste the blocks below into the dashboard. The Arabic locale is
-[store-listing.ar.md](store-listing.ar.md). It needs a native review before
-submission. Edge Add-ons can use the same public text. Images are in
-`docs/store/`; `tests/screenshots.mjs` makes them (the command is in
-[release.md](release.md)).
+[store-listing.ar.md](store-listing.ar.md). Edge Add-ons can use the same
+public text. Images are in `docs/store/`; `tests/screenshots.mjs` makes them
+(the command is in [release.md](release.md)).
 
 Do not submit until the release zip matches this page: English and Arabic UI,
 the first-run **Turn on Musicless** choice, no debug recorder, and the player labels

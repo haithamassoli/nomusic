@@ -1,9 +1,8 @@
 # استخدام «بلا موسيقى»
 
-**Needs native review.** The Arabic version of "Using Musicless" in the
-[README](../README.md#using-musicless), linked from the popup's Help in Arabic. Keep the
-two saying the same things, with the button names exactly as in
-`extension/_locales/ar/messages.json`.
+<!-- The Arabic version of "Using Musicless" in the README (../README.md#using-musicless),
+linked from the popup's Help in Arabic. Keep the two saying the same things, with the
+button names exactly as in extension/_locales/ar/messages.json. -->
 
 - **ابدأ المشاهدة.** بعد التثبيت، اختر تفعيل «بلا موسيقى»، ثم افتح YouTube. إذا كان YouTube
   مفتوحًا من قبل، فأعد تحميل صفحته. يمكنك أيضًا تفعيل «بلا موسيقى» من أيقونته في
