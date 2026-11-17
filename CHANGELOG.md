@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-11-17
+
 ### Fixed
 
 - Live streams play with the music removed. Before, most live streams in
@@ -78,5 +80,6 @@ First release of the extension. The interface is in English and Arabic.
   choice are stored in Chrome extension storage and may sync through
   Chrome Sync.
 
+[1.1.1]: https://github.com/ieasybooks/musicless/releases/tag/v1.1.1
 [1.1.0]: https://github.com/ieasybooks/musicless/releases/tag/v1.1.0
 [1.0.0]: https://github.com/ieasybooks/musicless/releases/tag/v1.0.0
