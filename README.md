@@ -68,8 +68,8 @@ removes it when it closes.
 - **Start watching.** Choose **Turn on Musicless** after installation, then open YouTube.
   If YouTube was already open, reload that page. You can also turn Musicless
   on from its icon in the browser toolbar.
-- **Give it a few seconds.** Musicless removes music automatically. A video
-  usually takes 2 to 4 seconds to start on a typical laptop. You’ll see the
+- **Give it a moment.** Musicless removes music automatically. A video
+  usually takes 1 to 2 seconds to start on a typical laptop. You’ll see the
   loading spinner and **Removing music** while you wait. Jumping ahead in a
   video may cause another short pause.
 - **Restore original sound.** Click the crossed-out music note in the video.
@@ -134,6 +134,7 @@ committed. Do not commit `extension/model/` or `extension/vendor/`.
 After editing the content-script modules, run `npm run build` before reloading
 the extension. Packaging rebuilds the content script automatically.
 
+- [Landing page: build and deployment](landing/README.md)
 - [Testing](docs/testing.md)
 - [Releasing](docs/release.md) and the [store listing](docs/store-listing.md)
 - [How it works](docs/how-it-works.md) and [where to make a change](docs/how-it-works.md#where-to-make-a-change)
