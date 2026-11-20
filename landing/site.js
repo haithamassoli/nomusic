@@ -19,7 +19,8 @@ document.addEventListener('click', event => {
   if (!language.contains(event.target)) language.open = false;
 });
 language.addEventListener('focusout', event => {
-  if (!language.contains(event.relatedTarget)) language.open = false;
+  // A tap can blur the opener before the link receives its click.
+  if (event.relatedTarget && !language.contains(event.relatedTarget)) language.open = false;
 });
 language.addEventListener('keydown', event => {
   if (event.key === 'Escape' && language.open) {
