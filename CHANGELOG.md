@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-11-21
+
+### Fixed
+
+- On YouTube videos and Shorts, the Musicless button waits for the player
+  controls to appear. It now shows up in its usual row without first jumping
+  from a corner or getting stuck there on some Shorts.
+
 ## [1.1.1] - 2026-11-18
 
 ### Fixed
@@ -80,6 +88,7 @@ First release of the extension. The interface is in English and Arabic.
   choice are stored in Chrome extension storage and may sync through
   Chrome Sync.
 
+[1.1.2]: https://github.com/ieasybooks/musicless/releases/tag/v1.1.2
 [1.1.1]: https://github.com/ieasybooks/musicless/releases/tag/v1.1.1
 [1.1.0]: https://github.com/ieasybooks/musicless/releases/tag/v1.1.0
 [1.0.0]: https://github.com/ieasybooks/musicless/releases/tag/v1.0.0
