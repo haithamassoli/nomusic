@@ -211,7 +211,7 @@ await step("on Shorts the button joins the Short's own buttons, and shows and hi
   await shorts.waitForSelector("#right-controls .musicless-btn", { timeout: 30000 });
   const look = () => shorts.evaluate(() => {
     const el = document.querySelector("#right-controls .musicless-btn");
-    const overlay = el?.closest(".player-controls");
+    const overlay = el?.closest(".player-controls, .ytdReelVideoRendererPlayerControls");
     return el && { place: el.dataset.place, status: el.dataset.musiclessStatus, overlay: overlay ? getComputedStyle(overlay).opacity : null };
   });
   const video = await shorts.evaluate(() => { const r = document.querySelector("#shorts-player video").getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });

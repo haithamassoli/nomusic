@@ -71,7 +71,7 @@ async function playerUI(page, shorts = false) {
     document.body.replaceChildren();
     const input = Object.assign(document.createElement("input"), { id: "comment", placeholder: "Comment outside the player" });
     const next = Object.assign(document.createElement("button"), { id: "next", textContent: "Next page control" });
-    const root = document.createElement("ytd-reel-video-renderer");
+    const root = document.createElement(shorts ? "ytd-reel-video-renderer" : "div");
     const host = document.createElement("div"); host.className = "html5-video-player";
     host.style.cssText = "position:relative;width:640px;height:360px;background:#222";
     const video = document.createElement("video"); host.append(video); root.append(host);
@@ -190,6 +190,73 @@ try {
     }));
     assert(state.recoveryVisible && state.focusedAction === "retry" && !state.buttonHovered && state.tooltipHidden);
     return state;
+  });
+
+  for (const layout of ["watch", "ytd-reel-video-renderer", "ytd-reel-video-renderer-cow"]) {
+    await step(`the toggle waits for the native controls on ${layout}, including a rebuild`, async () => {
+      // Install the real content script on a local page, then navigate in-page
+      // and add a video before either its YouTube wrapper or its controls.
+      await page.goto(playerURL);
+      await page.evaluate(layout => {
+        history.replaceState(null, "", layout === "watch" ? "/watch?v=test" : "/shorts/test");
+        const host = document.createElement("div"), video = document.createElement("video");
+        host.id = "test-host";
+        video.style.cssText = "width:640px;height:360px";
+        host.append(video);
+        document.body.replaceChildren(host);
+      }, layout);
+      await page.waitForSelector("#test-host .musicless-sr-only"); // Musicless has attached to the video
+      assert.equal(await page.$(".musicless-btn"), null);
+      await page.evaluate(layout => {
+        const host = document.querySelector("#test-host");
+        host.className = "html5-video-player";
+        const wrapper = document.createElement(layout === "watch" ? "div" : layout);
+        host.before(wrapper);
+        wrapper.append(host);
+        const controls = document.createElement(layout === "watch" ? "div" : "ytd-shorts-player-controls");
+        (layout === "watch" ? host : wrapper).append(controls);
+        controls.id = "late-controls";
+      }, layout);
+      const selector = (layout === "watch" ? ".ytp-right-controls" : "#right-controls") + " > .musicless-btn";
+      const addRow = () => page.$eval("#late-controls", (controls, layout) => {
+        const row = document.createElement("div");
+        if (layout === "watch") row.className = "ytp-right-controls";
+        else row.id = "right-controls";
+        row.append(Object.assign(document.createElement("button"), { className: "ytp-subtitles-button", textContent: "CC" }));
+        controls.append(row);
+      }, layout);
+      await addRow();
+      await page.waitForSelector(selector, { visible: true });
+      await page.$eval("#late-controls", controls => controls.replaceChildren());
+      await sleep(2200); // keep the HUD absent through a layout poll
+      assert.equal(await page.$(".musicless-btn"), null);
+      await addRow();
+      await page.waitForSelector(selector, { visible: true });
+      const row = await page.$eval(selector, el => el.dataset.place);
+      assert.equal(row, layout === "watch" ? "ytp" : "top");
+      return { place: row };
+    });
+  }
+
+  await step("a settled watch page picks up controls added late without moving the video", async () => {
+    await page.goto(playerURL);
+    await page.evaluate(() => {
+      history.replaceState(null, "", "/watch?v=late-controls");
+      document.body.innerHTML = '<div id="movie_player" class="html5-video-player"><video width="640" height="360"></video></div>';
+      document.dispatchEvent(new Event("yt-navigate-finish"));
+    });
+    await page.waitForSelector("#movie_player .musicless-sr-only"); // the extension has found the video
+    // Let both URL detection and the entire navigation refresh burst finish.
+    // An eight-second corner fallback would also fail this assertion.
+    await assert.rejects(page.waitForSelector("#movie_player .musicless-btn", { visible: true, timeout: 11000 }),
+      { name: "TimeoutError" }, "the note appeared before the controls");
+    await page.$eval("#movie_player", host => {
+      host.insertAdjacentHTML("beforeend", '<div class="ytp-right-controls"><button class="ytp-subtitles-button">CC</button></div>');
+    });
+    const note = '#movie_player .ytp-right-controls > .musicless-btn[data-place="ytp"]';
+    await page.waitForSelector(note, { visible: true, timeout: 6000 });
+    assert(await page.$eval(note, el => el.nextElementSibling?.matches(".ytp-subtitles-button")));
+    return { place: "ytp", beforeCaptions: true };
   });
 
   await step("repositioning an already-first Shorts button preserves focus and DOM order", async () => {
