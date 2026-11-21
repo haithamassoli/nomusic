@@ -1,8 +1,8 @@
 // What Musicless shows on each video: a view of one Session.
 // - A button that turns Musicless on or off for the current video, in the
 //   player's own row of buttons (YouTube's bar, an embed's or a Short's top
-//   row), else in its top corner: a note while the music plays, struck through
-//   while Musicless removes it, as YouTube draws mute; with a small dot while
+//   row), or in the corner of a player without controls: a note while the music
+//   plays, struck through while Musicless removes it; with a small dot while
 //   Musicless waits for the user (before the first run, after a failure).
 // - In the middle of the video, only while Musicless needs the user to wait or to
 //   click: YouTube's spinner with two words under it while the first audio is
@@ -109,27 +109,28 @@ function attr(element, name, value) {
   else if (element.getAttribute(name) !== value) element.setAttribute(name, value);
 }
 
-// The player's own row of buttons, when it shows one: YouTube's control bar
-// (the button goes before captions), or the top row of the embedded and mobile
-// players (drawn beside the main player, not inside it). Null for players
-// without one, or while it is hidden (the miniplayer).
-function controlRow(host) {
+// Wait for a watch page or Short to build its controls. A missing row on
+// these pages is temporary, including when YouTube rebuilds it mid-video.
+function placement(host) {
+  const reel = host.closest("ytd-reel-video-renderer, ytd-reel-video-renderer-cow");
+  if (reel) {
+    const row = reel.querySelector("ytd-shorts-player-controls #right-controls");
+    return row ? { row, before: row.firstElementChild, place: "top" } : null;
+  }
   const right = host.querySelector(".ytp-right-controls");
   if (shown(right)) {
     const row = right.querySelector(".ytp-right-controls-left") ?? right;
-    return { row, before: childHolding(row, row.querySelector(".ytp-subtitles-button")), bar: "ytp" };
+    return { row, before: childHolding(row, row.querySelector(".ytp-subtitles-button")), place: "ytp" };
   }
-  // Shorts: the active Short's own row at its top, before captions, its menu
-  // and fullscreen; it shows and hides with that row.
-  const shorts = host.closest("ytd-reel-video-renderer")?.querySelector("ytd-shorts-player-controls #right-controls");
-  if (shorts) return { row: shorts, before: shorts.firstElementChild, bar: "top" };
   const top = host.querySelector(".player-controls-top-right") ??
     (host.id === "movie_player" ? document.querySelector("#player-controls .player-controls-top-right") : null);
   if (top) {
     const captions = [...top.children].find((child) => child.querySelector?.("[class*='ClosedCaptioning']"));
-    return { row: top, before: captions ?? top.firstElementChild, bar: "top" };
+    return { row: top, before: captions ?? top.firstElementChild, place: "top" };
   }
-  return null;
+  // The video may already have a box before even its player wrapper exists.
+  if (location.pathname === "/watch" || /^\/shorts(?:\/|$)/.test(location.pathname) || minimized(host)) return null;
+  return { row: host, before: null, place: "corner" };
 }
 // The row's own child that holds `element`, else its first child: YouTube may
 // wrap a button in a container, and only a child of the row can be the place
@@ -484,34 +485,27 @@ export class Button {
 
   // ---- placement ----------------------------------------------------------
 
-  // In the player's own row of buttons when it has one; otherwise in its top
-  // corner, on the inline-end side of the player's direction.
   position(host) {
     if (this.retired) return;
     this.host = host;
     if (this.marked) this.markHost(host, this.marked[1]);
-    const row = controlRow(host);
-    let inRow = !!row;
-    try {
-      if (row && row.before !== this.el && (this.el.parentElement !== row.row || this.el.nextElementSibling !== row.before)) {
-        row.row.insertBefore(this.el, row.before);
+    const target = placement(host);
+    if (target) {
+      const { row, before, place } = target;
+      if (this.el.parentElement !== row || (place !== "corner" && before !== this.el && this.el.nextElementSibling !== before)) {
+        row.insertBefore(this.el, before);
       }
-    } catch {
-      inRow = false; // whatever YouTube changed in its row, the corner still works
-    }
-    if (inRow) {
-      this.el.classList.toggle("ytp-button", row.bar === "ytp");
-      this.el.dataset.place = row.bar;
-      this.el.style.left = this.el.style.right = "";
-    } else {
-      if (this.el.parentElement !== host) host.append(this.el);
-      this.el.classList.remove("ytp-button");
-      this.el.dataset.place = "corner";
-      const rtl = getComputedStyle(host).direction === "rtl";
+      this.el.classList.toggle("ytp-button", place === "ytp");
+      this.el.dataset.place = place;
+      const corner = place === "corner";
+      const rtl = corner && getComputedStyle(host).direction === "rtl";
       this.el.style.left = rtl ? "8px" : "";
-      this.el.style.right = rtl ? "" : "8px";
+      this.el.style.right = corner && !rtl ? "8px" : "";
+      this.el.style.display = "";
+    } else {
+      this.el.remove();
+      this.hideTip();
     }
-    this.el.style.display = !inRow && minimized(host) ? "none" : "";
     for (const part of [this.live, this.notice]) if (part.parentElement !== host) host.append(part);
     // The player got its box back while a failure waits: show the dialog again.
     if (this.session.failure && this.recovery.hidden && !this.dismissed) this.openRecovery();
@@ -522,10 +516,9 @@ export class Button {
   // Is the button still where position() put it? (YouTube rebuilds its
   // controls, and moves the player into and out of the miniplayer.)
   placed(host) {
-    if (!this.el.isConnected || this.host !== host) return false;
-    const row = controlRow(host);
-    if (row) return this.el.parentElement === row.row;
-    return this.el.dataset.place === "corner" && this.el.parentElement === host && (this.el.style.display === "none") === minimized(host);
+    if (!host || this.host !== host) return false;
+    const target = placement(host);
+    return target ? this.el.parentElement === target.row : !this.el.isConnected;
   }
 
   // No player big enough for the button, but the video shows and a failure
