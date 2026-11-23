@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
+import { storeRedirects } from './check.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const out = join(root, 'dist/landing');
@@ -11,6 +12,8 @@ const commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding:
 if (!/^[a-f0-9]{40}$/.test(commit)) throw new Error('Build must have a Git commit');
 await import('./build.mjs');
 await writeFile(join(out, '404.html'), '<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Page not found — Musicless</title><link rel="stylesheet" href="/assets/site.css"><main class="shell"><h1>Page not found</h1><p><a href="/en/">Musicless</a> · <a href="/ar/" lang="ar" dir="rtl">بلا موسيقى</a></p></main></html>\n');
+// Short links for posts and videos: /chrome and /firefox open the store listings.
+await writeFile(join(out, '_redirects'), storeRedirects.map(([path, url]) => `${path} ${url} 302\n`).join(''));
 // Stable asset names must revalidate after a deployment. Cloudflare still
 // caches and serves static assets at the edge without running Worker code.
 // no-transform prevents the zone's automatic HTML injections from changing
@@ -22,7 +25,7 @@ async function walk(dir) {
   for (const entry of await readdir(dir, { withFileTypes: true })) {
     const path = join(dir, entry.name);
     if (entry.isDirectory()) await walk(path);
-    else if (entry.isFile() && entry.name !== '_headers') {
+    else if (entry.isFile() && !['_headers', '_redirects'].includes(entry.name)) {
       const bytes = await readFile(path);
       if (bytes.length > 25 * 1024 * 1024) throw new Error('Static asset exceeds 25 MiB: ' + path);
       if (path.endsWith('.onnx')) throw new Error('Models belong in R2, not the website deployment');
