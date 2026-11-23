@@ -1,6 +1,6 @@
 export const stores = {
   chrome: 'https://chromewebstore.google.com/detail/musicless/fllcnhpmoanojfbncfpdencchjlgphco',
-  firefox: 'https://addons.mozilla.org/en-US/firefox/addon/musicless/',
+  firefox: 'https://addons.mozilla.org/firefox/addon/musicless/',
 };
 
 export const content = {

@@ -25,15 +25,18 @@ npm --prefix landing run check:model
 
 The landing package pins Wrangler independently of the extension's tools.
 Its release build calls the normal `landing/build.mjs`, then adds a 404 page,
-headers and `release.json` with the commit and each file's checksum. It rejects
-assets over Cloudflare's 25 MiB limit and bundled ONNX models. When the audio
-tool is present, it records its model URL and hash for the R2 check.
+headers and `release.json` with the commit and each file's checksum. It also
+adds `/chrome` and `/firefox` short links, which redirect (302) to the store
+listings in `landing/content.mjs`. It rejects assets over Cloudflare's 25 MiB
+limit and bundled ONNX models. When the audio tool is present, it records its
+model URL and hash for the R2 check.
 
 Hosting tests start local Wrangler on an available loopback port and stop it
 when finished. They check every published file, the English/Arabic paths,
-redirects, MIME types (including JavaScript modules and WASM when present),
-cache headers and missing pages/assets. The model check downloads and verifies
-the exact R2 model, including CORS and immutable caching, before deployment.
+redirects (including the store links), MIME types (including JavaScript
+modules and WASM when present), cache headers and missing pages/assets. The
+model check downloads and verifies the exact R2 model, including CORS and
+immutable caching, before deployment.
 
 Stable asset names revalidate in browsers so a deployment does not keep old
 JavaScript or WASM cached. Cloudflare still caches the static files at its edge.

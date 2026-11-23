@@ -3,8 +3,10 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { extname } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { stores } from './content.mjs';
 
 export const SITE = 'https://musicless.ieasybooks.com';
+export const storeRedirects = Object.entries(stores).flatMap(([browser, url]) => [['/' + browser, url], ['/' + browser + '/', url]]);
 const releaseURL = new URL('../dist/landing/release.json', import.meta.url);
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const get = (url, options = {}) => fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(30000), ...options });
@@ -65,7 +67,12 @@ export async function checkSite(site, expected) {
     assert.equal(to.pathname, '/' + language + '/');
     assert.equal(to.search, '?check=1');
   }
-  console.log('PASS ' + site + ': ' + expected.files.length + ' files, exact build, MIME types, caching, language routes and 404s');
+  for (const [path, url] of storeRedirects) {
+    const response = await get(site + path);
+    assert.equal(response.status, 302, path + ' must redirect temporarily, so the store link can change');
+    assert.equal(response.headers.get('location'), url, path + ' store listing');
+  }
+  console.log('PASS ' + site + ': ' + expected.files.length + ' files, exact build, MIME types, caching, language routes, store links and 404s');
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
