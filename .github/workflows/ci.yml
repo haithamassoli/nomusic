@@ -41,7 +41,7 @@ jobs:
       - name: Unit tests
         working-directory: tests
         run: npm run unit
-      - name: Website pages (approved text, links and layout)
+      - name: Website pages and browser audio tool (real MP3/M4A exports)
         run: npm run test:landing
       - name: Build synthetic test media (nothing copyrighted)
         run: |
