@@ -77,25 +77,32 @@ in YouTube's privacy-enhanced player. The link below opens the video on YouTube.
 - A small music detector runs first on every window, and the model only runs
   where it is needed. Windows without music keep their decoded audio (at
   44.1 kHz) and go through the same crossfades and export, so a file without
-  music, or with music only in an intro, an outro or a few short cues, finishes
-  in a fraction of the time. The detector
+  music, or with music only in an intro, an outro or a few short cues, can
+  finish in a fraction of the time. The detector
   ([audio/engine/detector.onnx](audio/engine/detector.onnx), a 129K-parameter
   convolutional network of 506 KiB that ships with the site) reads 48 mel
   bands of the window's mid and side channels up to 8 kHz, computed from the
   spectrum the tool needs anyway, and scores every 0.19 s of the window; a
-  score of 0 or more means music is likely. It and the check below add about
+  score of 0 or more means music is likely, and the window is separated. It
+  and the check below add about
   20 ms per window on an Apple M3, against 2.9 s for the model there, so a file
   with music throughout takes about 0.7% longer. It is trained to find music
   from about 30 dB below the speech up; [tools/detector.py](../tools/detector.py)
   rebuilds it and its docstring describes the data, the labels and the threshold.
-- Recordings differ (a reverberant hall scores higher than a studio), so the
-  model's own results calibrate the detector to each file. After the model
-  separates a window, [audio/dsp.js](audio/dsp.js) measures what it removed:
-  under -40 dB of the window and -35 dB in every second means the window had
-  no music. Later windows that score below such a window are skipped, up to a
-  score of 6 ([audio/grid.js](audio/grid.js)). After a window the model
-  changed, the next one is separated whatever its score, because music often
-  fades out across windows.
+- The threshold errs towards music: in evaluation (speakers and music not used
+  in training) it flagged every window with music, down to beds 36 dB under
+  the speech and 0.5 s cues, and also most windows of spoken-word recordings
+  without music, especially reverberant ones. Those take as long as before; clean, dry recordings gain
+  the most. The detector does not adapt its threshold to a file, since a
+  window that looked like music in one part of a file says little about
+  another. After the model separates a window, [audio/dsp.js](audio/dsp.js)
+  measures what it removed (more than -40 dB of the window or -35 dB in any
+  second means it changed the window). After a window the model changed, the
+  next one is separated whatever its score, because music often fades out
+  across windows. If the detector can't load or run, or returns anything but
+  64 finite scores, every window is separated, as before. When the model
+  removed nothing anywhere it ran, the result says it found no music to
+  remove.
 - Multithreading would need cross-origin isolation headers, which would block
   the home page's YouTube player, and the model's recurrent layers gain little
   from more threads, so the tool stays single-threaded.
@@ -145,7 +152,10 @@ suite in Firefox instead. It uses synthetic audio to check real MP3
 and AAC M4A downloads, duration/channels, audio agreement with the Python
 reference, the music detector (a voice-only file skips the model and says so;
 in a file with music only at the end, only those windows use the model; the
-browser and the reference give the detector the same input), native and WASM
+browser and the reference give the detector the same input; a missing or
+failing detector separates every window; and, before encoding, no second of
+a quiet bed, a short cue or music starting just before a window is left in,
+compared with separating every window), native and WASM
 encoders, caching, retries, cancellation, validation,
 capability gating and English/Arabic responsive layouts. It also checks the
 About, Privacy policy, Terms of use and Contact & support pages against the

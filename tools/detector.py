@@ -20,8 +20,8 @@ layouts.
 A tile is music when the music is within 30 dB of the speech, clean when it is
 more than 40 dB below or absent, and ignored in between. Training folds the
 threshold at which every music window of the validation set is found into the
-scores, so music is likely where a score is >= 0; the worker then calibrates
-that threshold to each file (landing/README.md). Shipped: these defaults, on an
+scores, so music is likely where a score is >= 0, and the worker separates the
+window (landing/README.md). Shipped: these defaults, on an
 Apple M3 (MPS). Needs FFmpeg and tools/detector-requirements.txt.
 """
 

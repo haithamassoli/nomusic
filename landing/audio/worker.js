@@ -1,5 +1,5 @@
 import { analyze, changed, musicFeatures, synthesize } from './dsp.js';
-import { applyFades, RATE, SCORE_CAP, STRIDE_SAMPLES } from './grid.js';
+import { applyFades, RATE, STRIDE_SAMPLES } from './grid.js';
 import { inspect, prepareEncoder, preflight, makeOutput, encode, readWindow, joinWindow } from './media.js';
 import { getModel } from './model-cache.js';
 
@@ -48,25 +48,25 @@ self.onmessage = async ({ data }) => {
         const windows = Math.ceil(total / STRIDE_SAMPLES);
         const started = performance.now();
         // Windows without music keep their audio as it is; only the others pay
-        // for the separation model, which takes nearly all the time. What the
-        // model does to the windows it separates calibrates the detector to this
-        // file: a window that scores below one the model left unchanged is
-        // skipped (up to SCORE_CAP), and after a window the model changed the
-        // next one is separated too, since music often fades out across windows.
-        let tail, clean = -Infinity, carry = false, separated = 0, music = 0;
+        // for the separation model, which takes nearly all the time. A window is
+        // separated when the detector finds music likely (score >= 0; Infinity
+        // without a working detector), and after a window the model changed,
+        // since music often fades out across windows (tests/website_reference.py
+        // mirrors both rules).
+        let tail, carry = false, separated = 0, removed = 0;
         report('processing', 0);
         for (let k = 0, start = 0; start < total; k++, start += STRIDE_SAMPLES) {
           let voices = await readWindow(track, info, start);
           // A mono file is separated as identical left and right channels.
           const spectrum = analyze(voices[0], voices[1] || voices[0]);
           const score = await model.score(musicFeatures(spectrum));
-          const separate = carry || score >= Math.max(0, Math.min(clean, SCORE_CAP));
+          const separate = carry || score >= 0;
           carry = false;
           if (separate) {
             separated++;
             const { left, right } = synthesize(await model.run(spectrum));
             const output = info.channels === 1 ? [left] : [left, right];
-            if (changed(voices, output)) { music++; carry = true; } else clean = Math.max(clean, score);
+            if (changed(voices, output)) { removed++; carry = true; }
             voices = output;
           }
           applyFades(voices, k);
@@ -82,8 +82,9 @@ self.onmessage = async ({ data }) => {
         source.close();
         await output.finalize();
         const buffer = target.buffer;
-        // Of the windows, how many the model separated and how many it changed.
-        postMessage({ type: 'done', buffer, mime: info.format === 'mp3' ? 'audio/mpeg' : 'audio/mp4', windows, separated, music }, [buffer]);
+        // Of the windows, how many the model separated and how many it removed
+        // music from (changed). removed is 0 when it removed nothing anywhere it ran.
+        postMessage({ type: 'done', buffer, mime: info.format === 'mp3' ? 'audio/mpeg' : 'audio/mp4', windows, separated, removed }, [buffer]);
       } finally {
         if (output.state !== 'finalized') await output.cancel();
         input.dispose();

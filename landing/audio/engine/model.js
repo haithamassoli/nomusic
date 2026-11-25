@@ -16,14 +16,17 @@ export const SHAPE = [1, 4, 513, 2049];
 // ../dsp.js) and scores music for every 8 frames. Its threshold is folded into
 // the scores (tools/detector.py): music is likely where a score is >= 0.
 const DETECTOR_SHAPE = [1, 2, 513, 48];
+const TILES = 64;
 const options = { executionProviders: ['wasm'], graphOptimizationLevel: 'all' };
 
 // bytes: the verified model file. Resolves to { run(spectrum) -> Float32Array,
 // score(features) -> the window's highest detector score }. The detector only
-// saves time: without it, every window scores Infinity and is separated.
+// saves time: if it doesn't load, fails or returns anything but 64 finite
+// scores, it is dropped for the run and every window scores Infinity, so the
+// model separates it. Errors of the separation model itself are not caught.
 export async function createModel(bytes) {
   const session = await ort.InferenceSession.create(bytes, options);
-  const detector = await ort.InferenceSession.create(new URL('./detector.onnx', import.meta.url).href, options)
+  let detector = await ort.InferenceSession.create(new URL('./detector.onnx', import.meta.url).href, options)
     .catch(error => { console.error('Musicless audio: music detector unavailable', error); return null; });
   return {
     async run(spectrum) {
@@ -31,9 +34,17 @@ export async function createModel(bytes) {
       return y.data;
     },
     async score(features) {
-      if (!detector) return Infinity;
-      const { y } = await detector.run({ x: new ort.Tensor('float32', features, DETECTOR_SHAPE) });
-      return Math.max(...y.data);
+      if (detector) {
+        try {
+          const { y } = await detector.run({ x: new ort.Tensor('float32', features, DETECTOR_SHAPE) });
+          if (y?.data.length === TILES && y.data.every(Number.isFinite)) return Math.max(...y.data);
+          throw new Error(`unexpected detector output ${y?.dims}`);
+        } catch (error) {
+          console.error('Musicless audio: music detector failed', error);
+          detector = null;
+        }
+      }
+      return Infinity;
     },
   };
 }

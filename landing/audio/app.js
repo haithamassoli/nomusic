@@ -137,7 +137,7 @@ function startWorker() {
         originalURL = URL.createObjectURL(file);
         resultName = file.name.replace(/\.(mp3|m4a)$/i, '') + '-musicless.' + info.format;
         listening = 'processed';
-        noMusic = data.music === 0;
+        noMusic = data.removed === 0;
         audio.src = resultURL;
         state = 'done';
         stopWorker();

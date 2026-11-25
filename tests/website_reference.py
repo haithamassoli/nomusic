@@ -6,9 +6,8 @@ square-root Hann, all 2049 bins); the model reads the spectrum as it is and
 returns the spectrum without the music; the inverse STFT uses the same window;
 and neighbouring windows crossfade linearly over their 2048-sample overlap.
 A small detector (landing/audio/engine/detector.onnx) scores mel bands of each
-window's spectrum first. A window goes through the model when its score is >= 0
-and at least the highest score of a window the model left unchanged (capped at
-SCORE_CAP), or when the model changed the window before; others keep their audio.
+window's spectrum first. A window goes through the model when its score is >= 0,
+or when the model changed the window before; others keep their audio.
 Needs numpy and onnxruntime only. The model file is a parameter: the tests
 download it from R2 and check its hash.
 """
@@ -26,7 +25,6 @@ STRIDE = WINDOW - OVERLAP
 SQRT_HANN = np.sqrt(0.5 - 0.5 * np.cos(2 * np.pi * np.arange(N_FFT) / N_FFT))
 _INDEX = np.arange(FRAMES)[:, None] * HOP + np.arange(N_FFT)[None, :]
 _sessions = {}
-SCORE_CAP = 6
 DETECTOR = Path(__file__).resolve().parent.parent / "landing/audio/engine/detector.onnx"
 
 # Detector input (musicFeatures in landing/audio/dsp.js): mid and side power in
@@ -84,27 +82,24 @@ def istft(spec):
 
 def voices(stereo, model, gate=True):
     """(samples, 2) float audio at 44.1 kHz -> the audio without the music, same shape.
-    gate=False separates every window, as the tool did before the detector."""
+    gate=False separates every window without the detector, as the tool did before it."""
     if model not in _sessions:
         _sessions[model] = ort.InferenceSession(model, providers=["CPUExecutionProvider"])
     x = np.asarray(stereo, np.float64).T
     n = x.shape[1]
     out = np.zeros((2, n + WINDOW))
     rise = (np.arange(OVERLAP) + 0.5) / OVERLAP
-    clean, carry = -np.inf, False
+    carry = False
     for k, start in enumerate(range(0, n, STRIDE)):
         block = np.zeros((2, WINDOW))
         segment = x[:, start : start + WINDOW]
         block[:, : segment.shape[1]] = segment
         spec = stft(block)
         planes = np.stack([spec[0].real, spec[0].imag, spec[1].real, spec[1].imag]).astype(np.float32)
-        s = score(planes)
-        if not gate or carry or s >= max(0, min(clean, SCORE_CAP)):
+        if not gate or carry or score(planes) >= 0:
             y = _sessions[model].run(None, {"x": planes[None]})[0][0].astype(np.float64)
             y = istft(np.stack([y[0] + 1j * y[1], y[2] + 1j * y[3]]))
             carry = changed(block, y)
-            if not carry:
-                clean = max(clean, s)
         else:
             y, carry = block.copy(), False
         if k > 0:

@@ -95,13 +95,19 @@ await page.evaluateOnNewDocument(() => {
           if (url.endsWith('.onnx') && mode.failModel) return new Response('Network failure', {status: 503});
           if (url.endsWith('.onnx') && mode.badModel) return new Response('Damaged bytes');
           if (url.endsWith('/detector.onnx') && mode.noDetector) return new Response('Not found', {status: 404});
+          if (url.endsWith('/detector.onnx') && mode.brokenDetector) {
+            // The detector with its input renamed: its session loads, but every run fails.
+            const bytes = new Uint8Array(await (await realFetch(...args)).arrayBuffer());
+            for (let i = 2; i < bytes.length; i++) if (bytes[i - 2] === 10 && bytes[i - 1] === 1 && bytes[i] === 120) bytes[i] = 122;
+            return new Response(bytes);
+          }
           return realFetch(...args);
         };
         await import(${JSON.stringify(String(url))});`;
       const blob = URL.createObjectURL(new Blob([script], { type: 'text/javascript' }));
       super(blob, options);
       this.addEventListener('message', event => {
-        window.testEvents.push(event.data.type === 'done' ? { type: 'done', windows: event.data.windows, separated: event.data.separated, music: event.data.music } : event.data);
+        window.testEvents.push(event.data.type === 'done' ? { type: 'done', windows: event.data.windows, separated: event.data.separated, removed: event.data.removed } : event.data);
         if (event.data.type === 'capability') URL.revokeObjectURL(blob);
       });
     }
@@ -277,15 +283,15 @@ try {
   await submit();
   const done = (await events()).find(event => event.type === 'done');
   assert.deepEqual([done.windows, done.separated], [4, 2], 'Only the windows with music use the model');
-  assert.ok(done.music > 0, 'The model removed the music');
+  assert.ok(done.removed > 0, 'The model removed the music');
   const mixed = await download('voice-then-music-musicless.mp3', 'mp3', 2, 36);
   await page.click('[data-action=reset]');
   await clearEvents();
   assert.equal((await choose('voice.m4a')).state, 'ready');
   await submit();
   const voiceOnly = (await events()).find(event => event.type === 'done');
-  assert.deepEqual([voiceOnly.windows, voiceOnly.separated, voiceOnly.music], [3, 0, 0]);
-  assert.ok((await state(['done'])).text.includes('We didn’t find any music in this file.'));
+  assert.deepEqual([voiceOnly.windows, voiceOnly.separated, voiceOnly.removed], [3, 0, 0]);
+  assert.ok((await state(['done'])).text.includes('We didn’t find any music to remove in this file.'));
   await download('voice-musicless.m4a', 'aac', 2, 24);
   await page.click('[data-action=reset]');
   console.log('PASS only the windows with music use the model; a file without music says so');
@@ -315,6 +321,38 @@ for gate in (True, False):
 `], { encoding: 'utf8' });
     console.log('PASS', input, metrics.trim().replace('\n', '; '));
   }
+  // Whole-file agreement can't show that no music is left: music 30 dB under
+  // the voice still agrees at 30 dB. So, before any encoding and where known
+  // music was added, compare the gated reference with one that separates every
+  // window (without the detector), re the added music, in every second. The
+  // same check must fail when one second of the music is let through.
+  const retention = execFileSync(python, ['-c', `
+import sys, numpy as np
+sys.path.insert(0, ${JSON.stringify(join(root, 'tests'))})
+import synth, website_reference as reference
+R, S, model = 44100, reference.STRIDE, ${JSON.stringify(modelPath)}
+v = synth.voice(36); v = np.stack([v, v], 1) * 0.5
+m = synth.music(36) * 0.5
+db = lambda x: 10 * np.log10(np.sum(x**2) + 1e-20)
+def music(a, b, level):  # the music in [a, b), at level dB re the voice there
+    out = np.zeros_like(m); out[a:b] = m[a:b]
+    return out * 10 ** ((level - db(m[a:b]) + db(v[a:b])) / 20)
+def left_in(y, base, added):  # the worst second: music left in, dB re the added music
+    return max(db((y - base)[i:i + R]) - db(added[i:i + R]) for i in range(0, len(y) - R, R // 2) if added[i:i + R].any())
+detector = reference.score
+for name, added in [('a -30 dB bed', music(13 * R, 22 * R, -30)), ('a 0.5 s cue', music(17 * R, int(17.5 * R), -10)),
+                    ('music from 0.3 s before a window', music(2 * S - int(0.3 * R), 36 * R, -20))]:
+    x = v + added
+    reference.score = None
+    base = reference.voices(x, model, gate=False)
+    reference.score = detector
+    gated, bypass = reference.voices(x, model), base.copy()
+    at = np.flatnonzero(added[:, 0])[0]; bypass[at:at + R] = x[at:at + R]
+    agree = db(base) - db(bypass - base)
+    print(f'{name}: {left_in(gated, base, added):.0f} dB left in; one second let through: {left_in(bypass, base, added):.0f} dB, at {agree:.0f} dB whole-file agreement')
+    assert left_in(gated, base, added) < -10 and left_in(bypass, base, added) > -10 and agree > 20
+`], { encoding: 'utf8' });
+  console.log('PASS no music left where the gate skips:', retention.trim().split('\n').join('; '));
   // The browser and the reference give the music detector the same input, here
   // for the window where the music starts.
   const pcm = new Float32Array(new Uint8Array(readFileSync(join(work, 'voice-then-music.mp3.f32'))).buffer);
@@ -333,16 +371,20 @@ assert np.abs(got-expected).max() < 1e-3, np.abs(got-expected).max()
 `]);
   console.log('PASS the browser computes the reference detector input');
 
-  // Without the detector the tool still works and separates every window.
-  await clearEvents();
-  await mode({ noDetector: true });
-  assert.equal((await choose('voice.m4a')).state, 'ready');
-  await submit();
-  const fallback = (await events()).find(event => event.type === 'done');
-  assert.deepEqual([fallback.windows, fallback.separated], [3, 3]);
-  await page.click('[data-action=reset]');
+  // Without a working detector (missing, or failing to run) the tool still
+  // works and separates every window.
+  for (const failure of ['noDetector', 'brokenDetector']) {
+    await clearEvents();
+    await mode({ [failure]: true });
+    assert.equal((await choose('voice.m4a')).state, 'ready');
+    await submit();
+    const fallback = (await events()).find(event => event.type === 'done');
+    assert.deepEqual([fallback.windows, fallback.separated], [3, 3], failure);
+    await download('voice-musicless.m4a', 'aac', 2, 24);
+    await page.click('[data-action=reset]');
+  }
   await mode({});
-  console.log('PASS without the music detector, every window is separated');
+  console.log('PASS without a working music detector, every window is separated');
 
   await mode({ noEncoder: true });
   assert.equal((await choose('voice-and-music.m4a')).state, 'ready');
