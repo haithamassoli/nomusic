@@ -3,6 +3,7 @@ About Musicless
 Musicless removes most of the background music from YouTube videos and keeps the voices, all on your own computer.
 ## What Musicless does
 A browser extension for Chrome, Firefox and other Chromium-based browsers on computers. It works on YouTube videos, Shorts and live streams, including YouTube players on other websites. A button in the player brings back the original sound, and you choose whether music is removed by default.
+On the website, you can also remove the music from an MP3 or M4A file.
 Its interface is in Arabic and English.
 ## How it works
 Musicless separates the voices from the music with an AI model that runs inside your browser, then plays the voices in sync with the video. Some music can remain, especially quiet music behind speech, and voices can sound a little different.
@@ -15,6 +16,7 @@ Follow EasyBooks on [Telegram](https://t.me/ieasybooks), [YouTube](https://youtu
 تزيل إضافة «بلا موسيقى» معظم موسيقى الخلفية من فيديوهات YouTube وتُبقي الأصوات البشرية، وكل ذلك يجري على حاسوبك.
 ## ما تقدّمه الإضافة
 إضافة لمتصفحات الحاسوب: Chrome وFirefox وسائر المتصفحات المبنية على Chromium. تعمل على فيديوهات YouTube ومقاطع Shorts والبث المباشر، وعلى مشغّلات YouTube المضمّنة في المواقع الأخرى. وفي المشغّل زر يعيد الصوت الأصلي متى شئت، ولك أن تختار هل تُزال الموسيقى تلقائيًا من كل فيديو، أم من الفيديوهات التي تختارها فقط.
+ويتيح الموقع كذلك إزالة الموسيقى من الملفات الصوتية بصيغتي MP3 وM4A.
 تتوفر الإضافة بواجهة عربية وإنجليزية.
 ## كيف تعمل الإضافة
 تفصل الإضافة الأصوات البشرية عن الموسيقى باستخدام نموذج ذكاء اصطناعي يعمل داخل متصفحك، ثم تشغّل الأصوات متزامنةً مع الفيديو. وقد تبقى بعض الموسيقى، خصوصًا الموسيقى الخافتة خلف الكلام، وقد تتغير جودة الأصوات قليلًا.
@@ -27,6 +29,7 @@ Privacy policy
 This policy explains how the Musicless browser extension and the musicless.ieasybooks.com website handle information. Musicless is made by EasyBooks, and you can use it without an account.
 ## How Musicless handles audio
 Musicless processes the audio of the video you're watching in your browser's memory, to separate the voices from the music. The audio never leaves your computer: it isn't uploaded, shared or saved, and it's discarded as the video plays on or when you close the page. Musicless doesn't collect your viewing history.
+Audio files you process on the website are handled the same way: in your browser, never uploaded. The first time, your browser downloads the music-removal model and keeps a copy for next time.
 ## Information stored on your device
 Your browser saves your “Remove music by default” setting and that you turned Musicless on, and may sync them across your devices. A random security token stays on this device, and a link back to the video you came from is kept until you return to it or close the browser.
 None of this is sent to us, and uninstalling Musicless removes it from your browser.
@@ -46,6 +49,7 @@ We publish the current version of this policy, and the date it was last updated,
 تبيّن هذه السياسة كيف نتعامل مع المعلومات في إضافة «بلا موسيقى» للمتصفح وموقع musicless.ieasybooks.com. الإضافة من تطوير الكتب المُيسّرة، ويمكنك استخدامها دون حساب.
 ## كيف تعالج الإضافة الصوت
 لفصل الأصوات البشرية عن الموسيقى، تعالج إضافة «بلا موسيقى» صوت الفيديو الذي تشاهده داخل ذاكرة متصفحك. ولا يغادر هذا الصوت حاسوبك أبدًا: لا يُرسَل إلى أي مكان، ولا يُشارَك مع أحد، ولا يُحفظ، بل يُحذف أولًا بأول مع تقدّم الفيديو أو عند إغلاق الصفحة. ولا تجمع الإضافة سجل مشاهدتك.
+والأمر نفسه في الملفات الصوتية التي تعالجها في الموقع: تُعالَج داخل متصفحك ولا تُرفع. وعند أول استخدام ينزّل متصفحك نموذج إزالة الموسيقى، ويحتفظ بنسخة منه للمرات التالية.
 ## ما يُحفظ على جهازك
 يحفظ متصفحك إعداد «إزالة الموسيقى افتراضيًا» وحالة تفعيل الإضافة، وقد يزامنهما بين أجهزتك. ويُحفظ على هذا الجهاز وحده رمز أمان عشوائي، ورابط يعيدك إلى الفيديو الذي جئت منه، ويبقى حتى تعود إليه أو تغلق المتصفح.
 ولا يُرسَل شيء من ذلك إلينا، ويُحذف كله من متصفحك عند إزالة الإضافة.
