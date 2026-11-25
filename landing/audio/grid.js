@@ -23,3 +23,9 @@ export function applyFades(channels, k) {
     }
   }
 }
+
+// The music detector's scores (engine/model.js) are >= 0 where music is likely.
+// Within a file the worker also skips windows that score below one the model
+// left unchanged, but only below this score (tests/website_reference.py mirrors
+// both rules).
+export const SCORE_CAP = 6;

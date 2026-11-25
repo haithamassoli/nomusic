@@ -74,6 +74,28 @@ in YouTube's privacy-enhanced player. The link below opens the video on YouTube.
   the screen awake while it works (phones pause hidden pages). Decoding is
   bounded to one window plus resampling margins. Export is incremental; only
   compressed output is retained.
+- A small music detector runs first on every window, and the model only runs
+  where it is needed. Windows without music keep their decoded audio (at
+  44.1 kHz) and go through the same crossfades and export, so a file without
+  music, or with music only in an intro, an outro or a few short cues, finishes
+  in a fraction of the time. The detector
+  ([audio/engine/detector.onnx](audio/engine/detector.onnx), a 129K-parameter
+  convolutional network of 506 KiB that ships with the site) reads 48 mel
+  bands of the window's mid and side channels up to 8 kHz, computed from the
+  spectrum the tool needs anyway, and scores every 0.19 s of the window; a
+  score of 0 or more means music is likely. It and the check below add about
+  20 ms per window on an Apple M3, against 2.9 s for the model there, so a file
+  with music throughout takes about 0.7% longer. It is trained to find music
+  from about 30 dB below the speech up; [tools/detector.py](../tools/detector.py)
+  rebuilds it and its docstring describes the data, the labels and the threshold.
+- Recordings differ (a reverberant hall scores higher than a studio), so the
+  model's own results calibrate the detector to each file. After the model
+  separates a window, [audio/dsp.js](audio/dsp.js) measures what it removed:
+  under -40 dB of the window and -35 dB in every second means the window had
+  no music. Later windows that score below such a window are skipped, up to a
+  score of 6 ([audio/grid.js](audio/grid.js)). After a window the model
+  changed, the next one is separated whatever its score, because music often
+  fades out across windows.
 - Multithreading would need cross-origin isolation headers, which would block
   the home page's YouTube player, and the model's recurrent layers gain little
   from more threads, so the tool stays single-threaded.
@@ -121,7 +143,10 @@ The landing suite builds and serves on port 8841 (override with
 and downloads the actual R2 model. Set `FIREFOX=/path/to/firefox` to run the same
 suite in Firefox instead. It uses synthetic audio to check real MP3
 and AAC M4A downloads, duration/channels, audio agreement with the Python
-reference, native and WASM encoders, caching, retries, cancellation, validation,
+reference, the music detector (a voice-only file skips the model and says so;
+in a file with music only at the end, only those windows use the model; the
+browser and the reference give the detector the same input), native and WASM
+encoders, caching, retries, cancellation, validation,
 capability gating and English/Arabic responsive layouts. It also checks the
 About, Privacy policy, Terms of use and Contact & support pages against the
 approved text, with their links, footer, sitemap entries and layout.
@@ -139,7 +164,7 @@ directory and serve `index.html` for `/`, `/en/`, and `/ar/`, and
 redirect.
 Serve `.mjs` as JavaScript and `.wasm` as `application/wasm`. HTTPS is required
 outside localhost. The build fetches the pinned ORT package with SHA-256
-verification if `setup.sh` has not supplied it locally. It does not bundle the
-model into Pages or need Python. No cross-origin isolation headers are required
+verification if `setup.sh` has not supplied it locally. It bundles only the
+small music detector, not the model, and does not need Python. No cross-origin isolation headers are required
 for the single-thread runtime. License texts, upstream sources and codec build
 instructions are published in `/licenses/THIRD_PARTY.md` and adjacent files.

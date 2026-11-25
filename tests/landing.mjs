@@ -9,6 +9,8 @@ import { join } from 'node:path';
 import puppeteer from 'puppeteer-core';
 import { chromePath } from '../tools/chrome.mjs';
 import { MODEL_URL, MODEL_SHA256, CACHE_NAME } from '../landing/audio/config.js';
+import { analyze, musicFeatures } from '../landing/audio/dsp.js';
+import { STRIDE_SAMPLES, WINDOW_SAMPLES } from '../landing/audio/grid.js';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const work = join(root, 'tests/.work/landing');
@@ -18,6 +20,11 @@ const ffmpeg = args => execFileSync('ffmpeg', ['-v', 'error', '-y', ...args]);
 const probe = path => JSON.parse(execFileSync('ffprobe', ['-v', 'error', '-show_streams', '-show_format', '-of', 'json', path], { encoding: 'utf8' }));
 execFileSync(process.execPath, ['landing/build.mjs'], { cwd: root, stdio: 'inherit' });
 execFileSync(python, [join(root, 'tests/synth.py'), join(work, 'voice-and-music.wav'), '30', '--music-db', '0']);
+// 24 s of voice alone, then 12 s of voice and music.
+execFileSync(python, [join(root, 'tests/synth.py'), join(work, 'music-tail.wav'), '36', '--music-db', '0', '--voice-only', join(work, 'voice.wav')]);
+ffmpeg(['-i', join(work, 'voice.wav'), '-i', join(work, 'music-tail.wav'), '-filter_complex',
+  '[0]atrim=0:24[a];[1]atrim=24:36,asetpts=PTS-STARTPTS[b];[a][b]concat=n=2:v=0:a=1', '-c:a', 'libmp3lame', '-b:a', '192k', join(work, 'voice-then-music.mp3')]);
+ffmpeg(['-i', join(work, 'voice.wav'), '-t', '24', '-c:a', 'aac', '-b:a', '128k', join(work, 'voice.m4a')]);
 ffmpeg(['-i', join(work, 'voice-and-music.wav'), '-c:a', 'libmp3lame', '-b:a', '192k', join(work, 'voice-and-music.mp3')]);
 ffmpeg(['-i', join(work, 'voice-and-music.wav'), '-ar', '48000', '-c:a', 'aac', '-b:a', '192k', join(work, 'voice-and-music.m4a')]);
 ffmpeg(['-i', join(work, 'voice-and-music.wav'), '-t', '3', '-ar', '22050', '-ac', '1', '-c:a', 'libmp3lame', join(work, 'mono.mp3')]);
@@ -87,13 +94,14 @@ await page.evaluateOnNewDocument(() => {
           if (url.endsWith('.onnx') && mode.holdModel) return new Promise(() => {});
           if (url.endsWith('.onnx') && mode.failModel) return new Response('Network failure', {status: 503});
           if (url.endsWith('.onnx') && mode.badModel) return new Response('Damaged bytes');
+          if (url.endsWith('/detector.onnx') && mode.noDetector) return new Response('Not found', {status: 404});
           return realFetch(...args);
         };
         await import(${JSON.stringify(String(url))});`;
       const blob = URL.createObjectURL(new Blob([script], { type: 'text/javascript' }));
       super(blob, options);
       this.addEventListener('message', event => {
-        window.testEvents.push(event.data.type === 'done' ? { type: 'done' } : event.data);
+        window.testEvents.push(event.data.type === 'done' ? { type: 'done', windows: event.data.windows, separated: event.data.separated, music: event.data.music } : event.data);
         if (event.data.type === 'capability') URL.revokeObjectURL(blob);
       });
     }
@@ -262,9 +270,31 @@ try {
   const m4a = await download('voice-and-music-musicless.m4a', 'aac');
   await page.click('[data-action=reset]');
 
+  // Windows without music skip the model and keep their audio: of the four
+  // windows, the model separates the two of the last 12 s, which have music.
+  await clearEvents();
+  assert.equal((await choose('voice-then-music.mp3')).state, 'ready');
+  await submit();
+  const done = (await events()).find(event => event.type === 'done');
+  assert.deepEqual([done.windows, done.separated], [4, 2], 'Only the windows with music use the model');
+  assert.ok(done.music > 0, 'The model removed the music');
+  const mixed = await download('voice-then-music-musicless.mp3', 'mp3', 2, 36);
+  await page.click('[data-action=reset]');
+  await clearEvents();
+  assert.equal((await choose('voice.m4a')).state, 'ready');
+  await submit();
+  const voiceOnly = (await events()).find(event => event.type === 'done');
+  assert.deepEqual([voiceOnly.windows, voiceOnly.separated, voiceOnly.music], [3, 0, 0]);
+  assert.ok((await state(['done'])).text.includes('We didn’t find any music in this file.'));
+  await download('voice-musicless.m4a', 'aac', 2, 24);
+  await page.click('[data-action=reset]');
+  console.log('PASS only the windows with music use the model; a file without music says so');
+
   // Compare the actual lossy browser exports with the trusted model reference,
   // after decoding the input with FFmpeg. This catches seam/timestamp/mux bugs.
-  for (const [input, output] of [['voice-and-music.mp3', mp3], ['voice-and-music.m4a', m4a]]) {
+  // The reference skips the same windows; it must also agree with separating
+  // every window, as the tool did before, so skipping leaves no music behind.
+  for (const [input, output] of [['voice-and-music.mp3', mp3], ['voice-and-music.m4a', m4a], ['voice-then-music.mp3', mixed]]) {
     const pcmIn = join(work, input + '.f32');
     const pcmOut = join(work, input + '.out.f32');
     ffmpeg(['-i', join(work, input), '-ar', '44100', '-ac', '2', '-f', 'f32le', pcmIn]);
@@ -275,15 +305,44 @@ sys.path.insert(0, ${JSON.stringify(join(root, 'tests'))})
 import website_reference as reference
 x=np.fromfile(${JSON.stringify(pcmIn)}, '<f4').reshape(-1,2)
 y=np.fromfile(${JSON.stringify(pcmOut)}, '<f4').reshape(-1,2)
-ref=reference.voices(x, ${JSON.stringify(modelPath)})
-n=min(len(ref),len(y)); ref=ref[:n]; y=y[:n]
 assert np.isfinite(y).all()
-score=10*np.log10(np.sum(ref**2)/(np.sum((ref-y)**2)+1e-20))
-print(f'Browser export/reference agreement: {score:.1f} dB')
-assert score > 20, score
+for gate in (True, False):
+    ref=reference.voices(x, ${JSON.stringify(modelPath)}, gate)
+    n=min(len(ref),len(y))
+    score=10*np.log10(np.sum(ref[:n]**2)/(np.sum((ref[:n]-y[:n])**2)+1e-20))
+    print(f'Browser export/reference agreement{"" if gate else ", every window separated"}: {score:.1f} dB')
+    assert score > 20, score
 `], { encoding: 'utf8' });
-    console.log('PASS', input, metrics.trim());
+    console.log('PASS', input, metrics.trim().replace('\n', '; '));
   }
+  // The browser and the reference give the music detector the same input, here
+  // for the window where the music starts.
+  const pcm = new Float32Array(new Uint8Array(readFileSync(join(work, 'voice-then-music.mp3.f32'))).buffer);
+  const at = 2 * STRIDE_SAMPLES;
+  const channel = c => Float32Array.from({ length: WINDOW_SAMPLES }, (_, i) => pcm[2 * (at + i) + c] || 0);
+  writeFileSync(join(work, 'features.f32'), musicFeatures(analyze(channel(0), channel(1))));
+  execFileSync(python, ['-c', `
+import sys, numpy as np
+sys.path.insert(0, ${JSON.stringify(join(root, 'tests'))})
+import website_reference as reference
+x=np.fromfile(${JSON.stringify(join(work, 'voice-then-music.mp3.f32'))}, '<f4').reshape(-1,2)[${at}:${at} + reference.WINDOW].T
+spec=reference.stft(np.pad(x, ((0, 0), (0, reference.WINDOW - x.shape[1]))))
+expected=reference.music_features(np.stack([spec[0].real, spec[0].imag, spec[1].real, spec[1].imag]).astype(np.float32))
+got=np.fromfile(${JSON.stringify(join(work, 'features.f32'))}, '<f4').reshape(expected.shape)
+assert np.abs(got-expected).max() < 1e-3, np.abs(got-expected).max()
+`]);
+  console.log('PASS the browser computes the reference detector input');
+
+  // Without the detector the tool still works and separates every window.
+  await clearEvents();
+  await mode({ noDetector: true });
+  assert.equal((await choose('voice.m4a')).state, 'ready');
+  await submit();
+  const fallback = (await events()).find(event => event.type === 'done');
+  assert.deepEqual([fallback.windows, fallback.separated], [3, 3]);
+  await page.click('[data-action=reset]');
+  await mode({});
+  console.log('PASS without the music detector, every window is separated');
 
   await mode({ noEncoder: true });
   assert.equal((await choose('voice-and-music.m4a')).state, 'ready');
