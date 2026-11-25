@@ -70,7 +70,8 @@ in YouTube's privacy-enhanced player. The link below opens the video on YouTube.
   own level, and a 46 ms crossfade between windows. Mono files are separated as
   identical left and right channels. Each window takes about 3× the CPU time
   Spleeter needs (about 4 s on a mid-range desktop), so a 10-minute file takes
-  a few minutes. Decoding is
+  a few minutes. The tool shows the time left after the first window and keeps
+  the screen awake while it works (phones pause hidden pages). Decoding is
   bounded to one window plus resampling margins. Export is incremental; only
   compressed output is retained.
 - Multithreading would need cross-origin isolation headers, which would block

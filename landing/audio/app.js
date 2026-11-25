@@ -13,15 +13,43 @@ const icons = {
   pause: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14" stroke-width="3"/></svg>',
   download: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M5 16v5h14v-5"/></svg>',
 };
-let state = 'empty', phase = '', percent = null, errorCode = '';
+let state = 'empty', phase = '', percent = null, remaining = null, errorCode = '';
 let file, info, worker, startupTimer, autoRun = false;
 let originalURL, resultURL, resultName, listening = 'processed';
 let supported = null;
 const audio = new Audio();
 audio.preload = 'metadata';
 const busy = () => ['checking', 'working'].includes(state);
+const plural = new Intl.PluralRules(document.documentElement.lang === 'ar' ? 'ar' : 'en');
+// Shown once the first window is done: whole minutes, rounded up.
+function timeLeft(seconds) {
+  if (seconds === null) return '';
+  if (seconds < 60) return c.left.soon;
+  const minutes = Math.ceil(seconds / 60);
+  return (c.left[plural.select(minutes)] || c.left.other).replace('{n}', minutes);
+}
+
+// Keep the screen on while a file is processed: phones pause hidden pages.
+// Best effort; the lock is released whenever the page is hidden, so it is
+// taken again when the page comes back.
+let wakeLock = null, waking = false;
+async function keepAwake() {
+  if (wakeLock || waking || state !== 'working' || document.visibilityState !== 'visible') return;
+  waking = true;
+  try {
+    wakeLock = await navigator.wakeLock?.request('screen') ?? null;
+    wakeLock?.addEventListener('release', () => { wakeLock = null; });
+    if (state !== 'working') allowSleep();
+  } catch { wakeLock = null; } finally { waking = false; }
+}
+function allowSleep() {
+  wakeLock?.release().catch(() => {});
+  wakeLock = null;
+}
+document.addEventListener('visibilitychange', keepAwake);
 
 function stopWorker() {
+  allowSleep();
   clearTimeout(startupTimer);
   worker?.terminate();
   worker = undefined;
@@ -54,7 +82,7 @@ function render(focus = false) {
     html = `${row(true)}<div class="audio-ready"><p class="audio-small">${formatText(c.output)}</p>${button('run', c.remove, true)}<p class="audio-hint">${c.first}</p></div>`;
   } else if (busy()) {
     const label = state === 'checking' ? 'checking' : phase;
-    html = `${row()}<div class="audio-progress-content"><div class="audio-status-heading"><h2>${c[label]}</h2><span class="audio-percent" aria-hidden="true">${percent === null ? '' : percent + '%'}</span></div><progress max="100"${percent === null ? '' : ` value="${percent}"`} aria-label="${c[label]}"></progress><p class="audio-small" id="audio-progress-copy">${c[label + 'Copy']}</p></div><div class="audio-cancel">${button('cancel', c.cancel)}</div>`;
+    html = `${row()}<div class="audio-progress-content"><div class="audio-status-heading"><h2>${c[label]}</h2><span class="audio-percent" aria-hidden="true">${percent === null ? '' : percent + '%'}</span></div><progress max="100"${percent === null ? '' : ` value="${percent}"`} aria-label="${c[label]}"></progress><p class="audio-small" id="audio-progress-copy">${c[label + 'Copy']}</p>${label === 'processing' ? `<p class="audio-small" id="audio-remaining">${timeLeft(remaining)}</p>` : ''}</div><div class="audio-cancel">${button('cancel', c.cancel)}</div>`;
   } else if (state === 'done') {
     html = `${row()}<h2>${c.done}</h2><div class="audio-listen" role="group" aria-label="${c.compare}"><button type="button" data-action="processed" aria-pressed="true">${c.processed}</button><button type="button" data-action="original" aria-pressed="false">${c.original}</button></div><div class="audio-player" dir="ltr"><button type="button" class="audio-play" data-action="play" aria-label="${c.play}">${icons.play}</button><input type="range" min="0" max="${info.duration}" step="0.1" value="0" aria-label="${c.seek}" id="audio-seek"><span class="audio-time"><span id="audio-elapsed">0:00</span> / ${time(info.duration)}</span></div><p class="audio-small" id="audio-preview-error" role="status" hidden></p><div class="audio-done-actions"><a class="button audio-primary" href="${resultURL}" download="${escape(resultName)}">${icons.download}${formatText(c.downloadFile)}</a>${button('reset', c.another)}</div>`;
   } else if (state === 'error') {
@@ -94,12 +122,15 @@ function startWorker() {
         if (autoRun) { autoRun = false; run(); }
       } else if (data.type === 'progress') {
         const changed = state !== 'working' || phase !== data.phase;
-        state = 'working'; phase = data.phase; percent = data.percent;
+        state = 'working'; phase = data.phase; percent = data.percent; remaining = data.remaining ?? null;
+        keepAwake();
         if (changed) { render(); say(c[phase]); }
         else {
           const progress = workspace.querySelector('progress');
           if (percent === null) progress.removeAttribute('value'); else progress.value = percent;
           workspace.querySelector('.audio-percent').textContent = percent === null ? '' : percent + '%';
+          const left = workspace.querySelector('#audio-remaining');
+          if (left) left.textContent = timeLeft(remaining);
         }
       } else if (data.type === 'done') {
         resultURL = URL.createObjectURL(new Blob([data.buffer], { type: data.mime }));
@@ -137,8 +168,9 @@ function inspectFile() {
 }
 function run() {
   if (state !== 'ready' || !worker) return;
-  state = 'working'; phase = 'preflight'; percent = null;
+  state = 'working'; phase = 'preflight'; percent = null; remaining = null;
   render(true); say(c.preflight);
+  keepAwake();
   worker.postMessage({ type: 'run' });
 }
 function reset() {

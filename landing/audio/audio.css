@@ -26,6 +26,8 @@
 .audio-meta { margin-top: 4px; font-variant-numeric: tabular-nums; }
 .audio-ready { display: grid; gap: 17px; flex: 1; align-content: end; }
 .audio-progress-content { display: grid; gap: 15px; }
+#audio-remaining { margin-top: -10px; font-variant-numeric: tabular-nums; }
+#audio-remaining:empty { display: none; }
 .audio-status-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .audio-percent { color: var(--muted); font-variant-numeric: tabular-nums; flex: none; }
 .audio-workspace progress { width: 100%; height: 6px; border: 0; border-radius: 999px; overflow: hidden; appearance: none; background: var(--soft); accent-color: var(--ink); }

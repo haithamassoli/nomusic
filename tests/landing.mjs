@@ -358,9 +358,12 @@ assert score > 20, score
   await choose('voice-and-music.mp3');
   await page.click('[data-action=run]');
   await page.waitForFunction(() => document.querySelector('.audio-status-heading')?.textContent.includes('Removing music'));
+  // After the first window, the time left appears under the progress text.
+  await page.waitForFunction(() => /left$/.test(document.querySelector('#audio-remaining')?.textContent || ''), { timeout: 90000 });
+  await page.screenshot({ path: join(work, 'processing-en.png') });
   await page.click('[data-action=cancel]');
   assert.equal((await state(['ready', 'error'])).state, 'ready');
-  console.log('PASS cancellation during inference');
+  console.log('PASS time left during inference, then cancellation');
 
   await mode({ holdDone: true });
   await choose('mono.mp3');

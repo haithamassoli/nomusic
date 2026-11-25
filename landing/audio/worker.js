@@ -5,7 +5,7 @@ import { getModel } from './model-cache.js';
 
 let media;
 let busy = false;
-const report = (phase, percent = null) => postMessage({ type: 'progress', phase, percent });
+const report = (phase, percent = null, remaining = null) => postMessage({ type: 'progress', phase, percent, remaining });
 
 // Feature detection in the actual worker context. No browser-name allowlist.
 function supported() {
@@ -45,6 +45,8 @@ self.onmessage = async ({ data }) => {
       try {
         await output.start();
         const total = Math.round(info.duration * RATE);
+        const windows = Math.ceil(total / STRIDE_SAMPLES);
+        const started = performance.now();
         let tail;
         report('processing', 0);
         for (let k = 0, start = 0; start < total; k++, start += STRIDE_SAMPLES) {
@@ -56,7 +58,9 @@ self.onmessage = async ({ data }) => {
           applyFades(voices, k);
           tail = joinWindow(voices, tail);
           await encode(source, voices, start, Math.min(STRIDE_SAMPLES, total - start));
-          report('processing', Math.min(100, Math.floor((start + STRIDE_SAMPLES) / total * 100)));
+          // Every window costs about the same, so the time so far predicts the rest.
+          const remaining = (performance.now() - started) / 1000 / (k + 1) * (windows - k - 1);
+          report('processing', Math.min(100, Math.floor((start + STRIDE_SAMPLES) / total * 100)), remaining);
         }
         stage = 'export';
         report('export');
