@@ -100,9 +100,9 @@ in YouTube's privacy-enhanced player. The link below opens the video on YouTube.
   second means it changed the window). After a window the model changed, the
   next one is separated whatever its score, because music often fades out
   across windows. If the detector can't load or run, or returns anything but
-  64 finite scores, every window is separated, as before. When the model
-  removed nothing anywhere it ran, the result says it found no music to
-  remove.
+  64 finite scores, every window is separated, as before. Only when the
+  detector flagged no window, so the model never ran, does the result say it
+  found no music.
 - Multithreading would need cross-origin isolation headers, which would block
   the home page's YouTube player, and the model's recurrent layers gain little
   from more threads, so the tool stays single-threaded.
@@ -153,9 +153,11 @@ and AAC M4A downloads, duration/channels, audio agreement with the Python
 reference, the music detector (a voice-only file skips the model and says so;
 in a file with music only at the end, only those windows use the model; the
 browser and the reference give the detector the same input; a missing or
-failing detector separates every window; and, before encoding, no second of
-a quiet bed, a short cue or music starting just before a window is left in,
-compared with separating every window), native and WASM
+failing detector separates every window; and, in every half second up to
+the end, before encoding, no music of a quiet bed, a short cue or music
+starting just before a window is left in, compared with separating every
+window: in the reference and, in Chrome, in the audio the browser encodes),
+native and WASM
 encoders, caching, retries, cancellation, validation,
 capability gating and English/Arabic responsive layouts. It also checks the
 About, Privacy policy, Terms of use and Contact & support pages against the

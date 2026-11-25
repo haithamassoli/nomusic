@@ -53,7 +53,7 @@ self.onmessage = async ({ data }) => {
         // without a working detector), and after a window the model changed,
         // since music often fades out across windows (tests/website_reference.py
         // mirrors both rules).
-        let tail, carry = false, separated = 0, removed = 0;
+        let tail, carry = false, separated = 0, changedWindows = 0;
         report('processing', 0);
         for (let k = 0, start = 0; start < total; k++, start += STRIDE_SAMPLES) {
           let voices = await readWindow(track, info, start);
@@ -66,7 +66,7 @@ self.onmessage = async ({ data }) => {
             separated++;
             const { left, right } = synthesize(await model.run(spectrum));
             const output = info.channels === 1 ? [left] : [left, right];
-            if (changed(voices, output)) { removed++; carry = true; }
+            if (changed(voices, output)) { changedWindows++; carry = true; }
             voices = output;
           }
           applyFades(voices, k);
@@ -82,9 +82,9 @@ self.onmessage = async ({ data }) => {
         source.close();
         await output.finalize();
         const buffer = target.buffer;
-        // Of the windows, how many the model separated and how many it removed
-        // music from (changed). removed is 0 when it removed nothing anywhere it ran.
-        postMessage({ type: 'done', buffer, mime: info.format === 'mp3' ? 'audio/mpeg' : 'audio/mp4', windows, separated, removed }, [buffer]);
+        // Of the windows, how many the model separated, and how many of those it
+        // changed (dsp.js changed(): a threshold, not proof that nothing was removed).
+        postMessage({ type: 'done', buffer, mime: info.format === 'mp3' ? 'audio/mpeg' : 'audio/mp4', windows, separated, changedWindows }, [buffer]);
       } finally {
         if (output.state !== 'finalized') await output.cancel();
         input.dispose();

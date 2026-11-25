@@ -137,7 +137,8 @@ function startWorker() {
         originalURL = URL.createObjectURL(file);
         resultName = file.name.replace(/\.(mp3|m4a)$/i, '') + '-musicless.' + info.format;
         listening = 'processed';
-        noMusic = data.removed === 0;
+        // Only the detector can say no window has music: the model never ran.
+        noMusic = data.separated === 0;
         audio.src = resultURL;
         state = 'done';
         stopWorker();
