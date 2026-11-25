@@ -2,12 +2,13 @@
 // downloaded files. Synthetic fixtures only. Requires ./setup.sh --dev + FFmpeg.
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, readdirSync, writeFileSync, existsSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import puppeteer from 'puppeteer-core';
 import { chromePath } from '../tools/chrome.mjs';
-import { MODEL_URL, CACHE_NAME } from '../landing/audio/config.js';
+import { MODEL_URL, MODEL_SHA256, CACHE_NAME } from '../landing/audio/config.js';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const work = join(root, 'tests/.work/landing');
@@ -23,6 +24,16 @@ ffmpeg(['-i', join(work, 'voice-and-music.wav'), '-t', '3', '-ar', '22050', '-ac
 ffmpeg(['-i', join(work, 'voice-and-music.wav'), '-t', '1', '-c:a', 'alac', join(work, 'lossless.m4a')]);
 ffmpeg(['-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=mono', '-t', '601', '-c:a', 'libmp3lame', '-b:a', '32k', join(work, 'too-long.mp3')]);
 writeFileSync(join(work, 'broken.mp3'), 'Not an MP3');
+// The offline reference runs the exact model file the browser downloads from R2.
+const modelPath = join(work, 'model.onnx');
+const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
+if (!existsSync(modelPath) || sha256(readFileSync(modelPath)) !== MODEL_SHA256) {
+  const response = await fetch(MODEL_URL);
+  assert.equal(response.status, 200, 'The website model is published in R2');
+  const bytes = Buffer.from(await response.arrayBuffer());
+  assert.equal(sha256(bytes), MODEL_SHA256, 'R2 model integrity');
+  writeFileSync(modelPath, bytes);
+}
 
 const port = Number(process.env.LANDING_TEST_PORT || 8841);
 const server = spawn(process.execPath, ['landing/serve.mjs'], { cwd: root, env: { ...process.env, PORT: String(port) }, stdio: ['ignore', 'pipe', 'inherit'] });
@@ -261,10 +272,10 @@ try {
     const metrics = execFileSync(python, ['-c', `
 import sys, numpy as np
 sys.path.insert(0, ${JSON.stringify(join(root, 'tests'))})
-import reference
+import website_reference as reference
 x=np.fromfile(${JSON.stringify(pcmIn)}, '<f4').reshape(-1,2)
 y=np.fromfile(${JSON.stringify(pcmOut)}, '<f4').reshape(-1,2)
-ref=reference.vocals(x)
+ref=reference.voices(x, ${JSON.stringify(modelPath)})
 n=min(len(ref),len(y)); ref=ref[:n]; y=y[:n]
 assert np.isfinite(y).all()
 score=10*np.log10(np.sum(ref**2)/(np.sum((ref-y)**2)+1e-20))

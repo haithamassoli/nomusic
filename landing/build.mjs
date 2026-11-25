@@ -6,8 +6,6 @@ import { firefoxManifest } from '../tools/firefox-manifest.mjs';
 import { content, stores } from './content.mjs';
 import { pages, slugs, dated, pageBody, plain } from './pages.mjs';
 import { audioCopy } from './audio/copy.js';
-import { MODEL_SHA256 } from './audio/config.js';
-import pins from '../tools/dependencies.json' with { type: 'json' };
 import { build } from 'esbuild';
 import { copyOrt } from '../tools/fetch-ort.mjs';
 
@@ -44,16 +42,14 @@ await cp(join(repo, 'extension/licenses/alexandria-OFL.txt'), join(out, 'assets/
 await cp(join(repo, 'extension/icons/player-on.svg'), join(out, 'assets/player-on.svg'));
 await cp(join(repo, 'docs/store/github-social-1280x640.png'), join(out, 'assets/social.png'));
 await cp(join(here, 'assets'), join(out, 'assets'), { recursive: true });
-if (MODEL_SHA256 !== pins.model_sha256) throw new Error('Update the website model URL to match the extension weights');
 await build({
   entryPoints: [join(here, 'audio/app.js'), join(here, 'audio/worker.js')],
   outdir: join(out, 'assets/audio'), bundle: true, splitting: true, format: 'esm',
   platform: 'browser', target: 'es2022', minify: true, chunkNames: 'chunks/[name]-[hash]',
 });
-for (const file of ['model.js', 'grid.js']) {
-  await mkdir(join(out, 'assets/engine'), { recursive: true });
-  await cp(join(repo, 'extension', file), join(out, 'assets/engine', file));
-}
+// Not bundled: the worker imports it (and through it ONNX Runtime) only once a run starts.
+await mkdir(join(out, 'assets/engine'), { recursive: true });
+await cp(join(here, 'audio/engine/model.js'), join(out, 'assets/engine/model.js'));
 await copyOrt(join(out, 'assets/engine/vendor'));
 await cp(join(here, 'audio/audio.css'), join(out, 'assets/audio.css'));
 await cp(join(repo, 'extension/licenses'), join(out, 'licenses'), { recursive: true });

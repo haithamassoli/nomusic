@@ -1,12 +1,14 @@
-// Run with a scoped Cloudflare API token in CLOUDFLARE_API_TOKEN, never argv.
+// Publishes the website's model: node tools/upload-model.mjs path/to/model.onnx
+// Run with a Cloudflare API token in CLOUDFLARE_API_TOKEN, never argv.
 import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
 import { MODEL_SHA256, MODEL_URL } from '../landing/audio/config.js';
 
 if (!process.env.CLOUDFLARE_API_TOKEN) throw new Error('CLOUDFLARE_API_TOKEN is required');
-const path = fileURLToPath(new URL('../extension/model/spleeter-2stems.onnx', import.meta.url));
+if (!process.argv[2]) throw new Error('Usage: node tools/upload-model.mjs path/to/model.onnx');
+const path = resolve(process.argv[2]);
 const bytes = await readFile(path);
 const sha = value => createHash('sha256').update(value).digest('hex');
 if (sha(bytes) !== MODEL_SHA256) throw new Error('Local model does not match the pinned hash');

@@ -2,8 +2,9 @@ import {
   Input, BlobSource, MP3, MP4, AudioSampleSink, AudioSample, AudioSampleSource,
   Output, BufferTarget, Mp3OutputFormat, Mp4OutputFormat, Quality, canEncodeAudio,
 } from 'mediabunny';
+// The extension's windowed-sinc resampler, shared as is: both read audio at 44.1 kHz.
 import { resample } from '../../extension/dsp.js';
-import { RATE, WINDOW_SAMPLES, STRIDE_SAMPLES, OVERLAP_SAMPLES } from '../../extension/grid.js';
+import { RATE, WINDOW_SAMPLES, STRIDE_SAMPLES, OVERLAP_SAMPLES } from './grid.js';
 import { MAX_BYTES, MAX_SECONDS } from './config.js';
 
 export const fail = code => { throw Object.assign(new Error(code), { code }); };
@@ -108,7 +109,7 @@ export async function readWindow(track, info, startFrame, count = WINDOW_SAMPLES
   return resample(channels, info.sampleRate, from / info.sampleRate, info.start + startFrame / RATE, count);
 }
 
-// Finalize a real, short encode before fetching 37.5 MiB of model weights.
+// Finalize a real, short encode before fetching the 47.3 MiB model.
 export async function preflight(track, info) {
   const channels = await readWindow(track, info, 0, Math.min(8192, Math.ceil(info.duration * RATE)));
   const { output, source, target } = makeOutput(info);
@@ -124,7 +125,7 @@ export async function preflight(track, info) {
 }
 
 // Only the previous 46 ms overlap is retained between windows. Fades are applied
-// by the shared extension code before this overlap-add, then output is trimmed.
+// by grid.js's applyFades before this overlap-add, then output is trimmed.
 export function joinWindow(channels, tail) {
   if (tail) for (let c = 0; c < channels.length; c++) {
     for (let i = 0; i < OVERLAP_SAMPLES; i++) channels[c][i] += tail[c][i];

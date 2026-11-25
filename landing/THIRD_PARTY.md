@@ -1,8 +1,8 @@
 # Browser audio tool dependencies
 
-The website uses the same Spleeter weights, signal processing and ONNX Runtime
-as the Musicless extension. Their MIT licenses and ONNX Runtime third-party
-notices are included beside this file.
+The website runs its own music-removal model on the same ONNX Runtime as the
+Musicless extension. The Musicless and ONNX Runtime licenses and ONNX Runtime's
+third-party notices are included beside this file.
 
 - Mediabunny 1.66.2, MPL-2.0: https://github.com/Vanilagy/mediabunny/tree/v1.66.2
 - @mediabunny/mp3-encoder 1.66.2, MPL-2.0, with LAME (LGPL):

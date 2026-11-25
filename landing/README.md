@@ -53,15 +53,29 @@ in YouTube's privacy-enhanced player. The link below opens the video on YouTube.
   checks the output settings, lazily registers the official MediaBunny MP3 or
   AAC WASM encoder when the native encoder is unavailable, and performs a real
   short decode/encode before downloading the model.
-- The 37.5 MiB model comes from the existing `ieasybooks` R2 bucket via
-  `https://files.ieasybooks.com/musicless/models/spleeter-2stems-<sha256>.onnx`.
-  [audio/config.js](audio/config.js) pins the exact extension model hash. SHA-256
-  is checked on both network and cached bytes. CacheStorage is best effort;
+- The website has its own music-removal model, separate from the extension's
+  Spleeter: a 47.3 MiB ONNX graph (12M float32 weights, band-split recurrent
+  layers) that reads the full-band complex spectrum of a stereo window and
+  returns that spectrum without the music. It comes from the existing
+  `ieasybooks` R2 bucket via
+  `https://files.ieasybooks.com/musicless/models/musicless-<sha256>.onnx`.
+  [audio/config.js](audio/config.js) pins its hash and exact size. SHA-256 is
+  checked on both network and cached bytes. CacheStorage is best effort;
   eviction, disabled storage and corrupt cache entries trigger a fresh fetch.
-- The dedicated worker reuses `extension/model.js`, `dsp.js`, and `grid.js`:
-  single-thread ORT WASM, 44.1 kHz, the same STFT, normalization, masks and
-  overlapping windows. Decoding is bounded to one ~12-second window plus
-  resampling margins. Export is incremental; only compressed output is retained.
+  Once a new model is cached, older ones are deleted from the cache.
+- The dedicated worker runs it on single-thread ORT WASM with
+  [audio/grid.js](audio/grid.js) and [audio/dsp.js](audio/dsp.js): 44.1 kHz,
+  ~11.9-second windows on a fixed grid from the start of the file, a centred
+  STFT (n_fft 4096, hop 1024, square-root Hann, all 2049 bins) at the audio's
+  own level, and a 46 ms crossfade between windows. Mono files are separated as
+  identical left and right channels. Each window takes about 3× the CPU time
+  Spleeter needs (about 4 s on a mid-range desktop), so a 10-minute file takes
+  a few minutes. Decoding is
+  bounded to one window plus resampling margins. Export is incremental; only
+  compressed output is retained.
+- Multithreading would need cross-origin isolation headers, which would block
+  the home page's YouTube player, and the model's recurrent layers gain little
+  from more threads, so the tool stays single-threaded.
 - Cancel terminates the worker, including child encoder workers and pending
   downloads. Completion also terminates it to release WASM memory. Preview and
   download use local Blob URLs, revoked on reset or leaving the page.
@@ -70,14 +84,16 @@ in YouTube's privacy-enhanced player. The link below opens the video on YouTube.
 
 ## Model publishing
 
-`./setup.sh` builds the pinned extension model. To publish it, provide a
-Cloudflare API token through the environment, then run:
+Pass the model file to the script and provide a Cloudflare API token that can
+write the `ieasybooks` bucket through the environment. From the sibling
+infrastructure repository, the vault supplies Terraform's token for one run:
 
 ```sh
-node tools/upload-model.mjs
+mise run vault:run INFRASTRUCTURE_CLOUDFLARE_API_TOKEN=CLOUDFLARE_API_TOKEN -- \
+  node ../musicless/tools/upload-model.mjs path/to/model.onnx
 ```
 
-The script verifies the local hash, uploads to the hashed object key with
+The script verifies the file against the pinned hash, uploads to the hashed object key with
 `Cache-Control: public, max-age=31536000, immutable`, then downloads it to
 verify its hash and CORS. It does not deploy the website. Never put tokens in
 source files or command arguments.
@@ -85,7 +101,8 @@ source files or command arguments.
 The sibling infrastructure repository manages the bucket's GET/HEAD CORS and
 the narrow `/musicless/models/` cache rule for `files.ieasybooks.com`. Model keys
 must remain content-addressed. Update the pin and publish a new key when weights
-change. Keep old model objects for already-open pages.
+change, before merging. The deployment checks the pinned model in R2 first. Keep
+old model objects for already-open pages.
 
 ## Tests
 

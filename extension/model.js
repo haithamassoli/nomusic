@@ -14,7 +14,7 @@ const MODEL_URL = new URL("./model/spleeter-2stems.onnx", import.meta.url).href;
 export const INPUT_SHAPE = [2, 1, FRAMES, BINS];
 
 // Lower priority values run first; equal priorities run in arrival order.
-export function createModel({ source = MODEL_URL } = {}) {
+export function createModel() {
   let session = null;
   let loading = null;
   let seconds = null;
@@ -24,7 +24,7 @@ export function createModel({ source = MODEL_URL } = {}) {
   function load() {
     loading ??= (async () => {
       const started = performance.now();
-      session = await ort.InferenceSession.create(source, {
+      session = await ort.InferenceSession.create(MODEL_URL, {
         executionProviders: ["wasm"],
         graphOptimizationLevel: "all",
         freeDimensionOverrides: { num_splits: 1 },

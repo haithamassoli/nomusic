@@ -1,4 +1,4 @@
-import { CACHE_NAME, MODEL_SHA256, MODEL_URL } from './config.js';
+import { CACHE_NAME, MODEL_BYTES, MODEL_SHA256, MODEL_URL } from './config.js';
 
 export async function verifyModel(bytes) {
   const digest = await crypto.subtle.digest('SHA-256', bytes);
@@ -25,9 +25,9 @@ export async function getModel(report) {
   try {
     const response = await fetch(MODEL_URL, { credentials: 'omit' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const total = Number(response.headers.get('content-length'));
-    // Bound the download even if the CDN sends a bad response.
-    if (total > 45 * 1024 * 1024) throw new Error('Unexpected model size');
+    // Bound the download even if the CDN sends a bad response. Content-Length
+    // may be a compressed size, so progress counts against the known size.
+    if (Number(response.headers.get('content-length')) > MODEL_BYTES) throw new Error('Unexpected model size');
     const chunks = [];
     let received = 0;
     const reader = response.body.getReader();
@@ -35,12 +35,12 @@ export async function getModel(report) {
       const { done, value } = await reader.read();
       if (done) break;
       received += value.byteLength;
-      if (received > 45 * 1024 * 1024) {
+      if (received > MODEL_BYTES) {
         await reader.cancel();
         throw new Error('Unexpected model size');
       }
       chunks.push(value);
-      report('download', total > 0 ? Math.min(99, Math.floor(received / total * 100)) : null);
+      report('download', Math.min(99, Math.floor(received / MODEL_BYTES * 100)));
     }
     bytes = new Uint8Array(received);
     let offset = 0;
@@ -52,6 +52,8 @@ export async function getModel(report) {
   if (!await verifyModel(bytes)) throw Object.assign(new Error('model-integrity'), { code: 'model-integrity' });
   try {
     await cache?.put(MODEL_URL, new Response(bytes, { headers: { 'Content-Type': 'application/octet-stream' } }));
+    // Free the space of earlier models (each has its own URL).
+    for (const request of await cache?.keys() ?? []) if (request.url !== MODEL_URL) await cache.delete(request);
   } catch { /* Best effort; the verified bytes are ready to use. */ }
   return bytes;
 }

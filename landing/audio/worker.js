@@ -1,5 +1,5 @@
-import { analyze, synthesize } from '../../extension/dsp.js';
-import { applyFades, RATE, STRIDE_SAMPLES } from '../../extension/grid.js';
+import { analyze, synthesize } from './dsp.js';
+import { applyFades, RATE, STRIDE_SAMPLES } from './grid.js';
 import { inspect, prepareEncoder, preflight, makeOutput, encode, readWindow, joinWindow } from './media.js';
 import { getModel } from './model-cache.js';
 
@@ -39,8 +39,7 @@ self.onmessage = async ({ data }) => {
       // Copied verbatim with its vendor directory by build.mjs. Dynamic loading
       // keeps ONNX Runtime off the initial page and the file-selection path.
       const { createModel } = await import(new URL('../engine/model.js', import.meta.url).href);
-      const model = createModel({ source: bytes });
-      await model.load();
+      const model = await createModel(bytes);
       stage = 'processing';
       const { output, source, target } = makeOutput(info);
       try {
@@ -50,13 +49,13 @@ self.onmessage = async ({ data }) => {
         report('processing', 0);
         for (let k = 0, start = 0; start < total; k++, start += STRIDE_SAMPLES) {
           const channels = await readWindow(track, info, start);
-          const { spec, magnitude } = analyze(channels[0], channels[1] || channels[0]);
-          const { mask } = await model.run(magnitude, 0);
-          const { left, right } = synthesize(spec, mask);
-          const vocals = info.channels === 1 ? [left] : [left, right];
-          applyFades(vocals, k);
-          tail = joinWindow(vocals, tail);
-          await encode(source, vocals, start, Math.min(STRIDE_SAMPLES, total - start));
+          // A mono file is separated as identical left and right channels.
+          const spectrum = await model.run(analyze(channels[0], channels[1] || channels[0]));
+          const { left, right } = synthesize(spectrum);
+          const voices = info.channels === 1 ? [left] : [left, right];
+          applyFades(voices, k);
+          tail = joinWindow(voices, tail);
+          await encode(source, voices, start, Math.min(STRIDE_SAMPLES, total - start));
           report('processing', Math.min(100, Math.floor((start + STRIDE_SAMPLES) / total * 100)));
         }
         stage = 'export';
