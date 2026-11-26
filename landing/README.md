@@ -88,7 +88,7 @@ in YouTube's privacy-enhanced player. The link below opens the video on YouTube.
   2.9 s for the model there, so a file with music throughout takes about 1%
   longer. It learned from synthetic mixes and from real podcasts and sermons,
   where the model itself showed which windows it changes and an audio tagger
-  confirmed that what it changed was music;
+  confirmed music there, in the input or in what the model removed;
   [tools/detector.py](../tools/detector.py) rebuilds it and its docstring
   describes the data, the labels and the threshold.
 - The threshold errs towards music. On podcast programmes kept out of
@@ -96,13 +96,14 @@ in YouTube's privacy-enhanced player. The link below opens the video on YouTube.
   separate passages) and skipped 40% of the windows without music (the first
   detector skipped 7%); in synthetic tests with speakers and music not used in
   training it flagged every window with music, down to beds 36 dB under the
-  speech and 0.5 s cues. Very reverberant recordings, such as some Friday
-  sermons recorded in the mosque or lectures in a hall, are still mostly
-  separated and take as long as before; dry recordings gain the most. The
-  detector does not adapt its threshold to a file, since a
-  window that looked like music in one part of a file says little about
-  another. After the model separates a window, [audio/dsp.js](audio/dsp.js)
-  measures what it removed (more than -40 dB of the window or -35 dB in any
+  speech and 0.5 s cues. In held-out sermons of the SAT dataset it skipped 90%
+  of the windows without music, but very reverberant recordings, such as some
+  Friday sermons recorded in the mosque or a lecture in a hall, are still
+  mostly separated and take as long as before; dry recordings gain the most.
+  The detector does not adapt its threshold to a file, since a window that
+  looked like music in one part of a file says little about another. After
+  the model separates a window, [audio/dsp.js](audio/dsp.js) measures what it
+  removed (more than -40 dB of the window or -35 dB in any
   second means it changed the window). After a window the model changed, the
   next one is separated whatever its score, because music often fades out
   across windows. If the detector can't load or run, or returns anything but

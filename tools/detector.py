@@ -11,7 +11,7 @@ landing/audio/dsp.js) and scores every 8 STFT frames (~0.19 s) of a window.
     python tools/detector.py judge DATA LABELS         # PANNs' second opinion on what it changed
     python tools/detector.py mix DATA LABELS MIXES     # known music added to real clean speech
     python tools/detector.py train SHARDS LABELS MIXES landing/audio/engine/detector.onnx
-    python tools/detector.py evaluate LABELS landing/audio/engine/detector.onnx [test]
+    python tools/detector.py evaluate LABELS landing/audio/engine/detector.onnx dev,calib,test,sermons
 
 Synthetic windows. Speech: FLEURS (CC BY 4.0) in Arabic, English, Persian, Urdu,
 French and Turkish; the Arabic test split is not used, so its speakers can serve
@@ -28,20 +28,21 @@ or absent, and ignored in between.
 Real windows (tools/detector-episodes.json): Thmanyah's podcasts from YouTube,
 used with Thmanyah's permission and split by programme so that no programme's
 intro is both trained on and tested, and Friday sermons of the SAT dataset (CC
-BY 4.0). The website's own separation model is the teacher: a window it does not
-change can be skipped with no difference in the output, so it is clean. Where it
-changes a window, PANNs (Cnn14, AudioSet; used offline only, never shipped) must
-confirm music, in the input or in what was removed: the model sometimes removes
-speech. Confirmed windows are music; the rest are not trained on. Known FMA
-music added to clean real windows, dry or through a hall's loudspeakers, gives
-music under real speech with exact levels.
+BY 4.0), split by sermon. The website's own separation model is the teacher: a
+window it does not change can be skipped with no difference in the output, so
+it is clean. Where it changes a window, PANNs (Cnn14, AudioSet; used offline
+only, never shipped) must confirm music, in the input or in what was removed:
+the model sometimes removes speech. Confirmed windows are music; the rest are
+not trained on. Known FMA music added to clean real windows, dry or through a
+hall's loudspeakers, gives music under real speech with exact levels.
 
 Training mixes the three. The threshold is the lowest score of any music window
 of the synthetic validation set and of the calibration programmes, less a
 margin; it is folded into the scores, so music is likely where a score is >= 0
 and the worker separates the window (landing/README.md). The development
-programmes chose the recipe and the test programmes were scored once, at the
-end. Shipped: these defaults on an Apple M3 (MPS). Needs FFmpeg, yt-dlp and
+programmes chose the recipe and the test programmes were scored only once it
+was fixed; the held-out sermons were also looked at while choosing it.
+Shipped: these defaults on an Apple M3 (MPS). Needs FFmpeg, yt-dlp and
 tools/detector-requirements.txt.
 """
 
@@ -355,13 +356,14 @@ def synthetic(shards, part, music_db=-30, clean_db=-40):
     return np.concatenate([np.load(p)["x"] for p in files]), np.where(y > music_db, 1, np.where(y < clean_db, 0, -1)).astype(np.int8)
 
 
-def train(shards, labels, mixes, out, epochs=16, margin=1.0):
+def train(shards, labels, mixes, out, epochs=16, margin=1.0, seed=0):
     """Batches of 64: 23 synthetic, 26 real, 15 real speech with known music."""
+    epochs, margin, seed = int(epochs), float(margin), int(seed)
     import torch
     import torch.nn.functional as F
 
-    torch.manual_seed(0)
-    rng = np.random.default_rng(0)
+    torch.manual_seed(seed)
+    rng = np.random.default_rng(seed)
     device = "mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu"
     files = sorted(glob.glob(f"{mixes}/*.npz"))
     pools = [(*synthetic(shards, "train"), 23), (*real(labels, "train")[:2], 26),
@@ -436,7 +438,7 @@ EPISODES = os.path.join(HERE, "detector-episodes.json")
 SAT = "https://data.mendeley.com/public-api/zip/fnz5bt24st/download/1"
 PANNS = "https://zenodo.org/record/3987831/files/{}?download=1"
 PANNS_SED, PANNS_CLIP = "Cnn14_DecisionLevelMax_mAP%3D0.385.pth", "Cnn14_mAP%3D0.431.pth"
-MUSIC, SPEECH = 137, 0  # AudioSet classes
+AS_MUSIC, AS_SPEECH = 137, 0  # AudioSet classes
 HOPS = N // ref.HOP
 
 
@@ -579,8 +581,16 @@ def label(model, data, labels, workers=6):
     os.makedirs(labels, exist_ok=True)
     jobs = [(model, data, labels, e) for e in episodes().values()]
     with Pool(int(workers)) as pool:
-        for i, (vid, m) in enumerate(pool.imap_unordered(label_one, jobs)):
-            print(f"{i + 1}/{len(jobs)} {vid}: {m} windows", flush=True)
+        for i, (vid, m) in enumerate(pool.imap_unordered(label_safely, jobs)):
+            print(f"{i + 1}/{len(jobs)} {vid}: {m}", flush=True)
+
+
+def label_safely(job):
+    try:
+        vid, m = label_one(job)
+        return vid, f"{m} windows"
+    except Exception as error:  # a recording taken down or behind a sign-in: the others go on
+        return job[3]["id"], f"failed: {error}"
 
 
 def judge(data, labels):
@@ -607,10 +617,10 @@ def judge(data, labels):
         if a is None:
             return np.zeros((2, TILES), np.float32)
         p = sed.inference(a)[0]
-        return np.array([[p[x : max(x + 1, y), c].max() if x < len(p) else 0 for x, y in span] for c in (MUSIC, SPEECH)], np.float32)
+        return np.array([[p[x : max(x + 1, y), c].max() if x < len(p) else 0 for x, y in span] for c in (AS_MUSIC, AS_SPEECH)], np.float32)
 
     for path in sorted(glob.glob(f"{labels}/*.npz")):
-        if path.endswith(".part.npz") or path.endswith(".judge.npz") or os.path.exists(path[:-4] + ".judge.npz"):
+        if path.endswith(".part.npz") or path.endswith(".judge.npz") or os.path.exists(path[:-4] + ".judge.npz"):  # done
             continue
         d = np.load(path)
         found = {key: np.full((len(d["k"]), TILES), np.nan, np.float32) for key in ["mi", "si", "mr", "sr"]}
@@ -622,8 +632,9 @@ def judge(data, labels):
             (found["mi"][i], found["si"][i]), (found["mr"][i], found["sr"][i]) = tiles(a[0]), tiles(a[1])
             if d["changed"][i] and scaled(a[1]) is not None:
                 p = clip.inference(scaled(a[1]))[0][0]
-                clip_music[i], clip_speech[i] = p[MUSIC], p[SPEECH]
-        np.savez(path[:-4] + ".judge.npz", **found, clip_music=clip_music, clip_speech=clip_speech)
+                clip_music[i], clip_speech[i] = p[AS_MUSIC], p[AS_SPEECH]
+        np.savez(path[:-4] + ".judge.part.npz", **found, clip_music=clip_music, clip_speech=clip_speech)
+        os.replace(path[:-4] + ".judge.part.npz", path[:-4] + ".judge.npz")
         print(os.path.basename(path), flush=True)
 
 
@@ -690,25 +701,29 @@ def real(labels, split):
     return np.concatenate(xs), np.concatenate(ys), {k: np.concatenate(v) for k, v in info.items()}
 
 
-def hall(x, rng):
-    """A mosque or lecture hall: loudspeaker band-pass and soft clipping, a later loudspeaker, a long room."""
+def hall(x, seed, linear=False):
+    """A mosque or lecture hall: loudspeaker band-pass and soft clipping, a later loudspeaker, a long room. The same
+    seed gives the same hall; linear leaves out the clipping and the level, to measure what reaches the listener."""
     from scipy.signal import butter, fftconvolve, sosfilt
 
+    rng = np.random.default_rng(seed)
     y = sosfilt(butter(2, [rng.uniform(100, 250), rng.uniform(4000, 8000)], "bandpass", fs=44100, output="sos"), x, axis=-1)
     drive = rng.uniform(1, 4)
-    y = np.tanh(drive * y / (np.abs(y).max() + 1e-9)) / np.tanh(drive)
+    if not linear:
+        y = np.tanh(drive * y / (np.abs(y).max() + 1e-9)) / np.tanh(drive)
     y = y + rng.uniform(0.2, 0.7) * np.pad(y, ((0, 0), (int(rng.uniform(0.05, 0.35) * 44100), 0)))[:, :N]
     rt = rng.uniform(0.8, 3.5)
     h = rng.standard_normal((2, int(min(rt, 2.5) * 44100))) * np.exp(-6.9 * np.arange(int(min(rt, 2.5) * 44100)) / 44100 / rt)
     h /= np.sqrt((h**2).sum(1, keepdims=True))
     h[:, 0] += rng.uniform(0.3, 3)
     y = np.stack([fftconvolve(y[c], h[c])[:N] for c in range(2)])
-    return y / (np.abs(y).max() + 1e-9) * np.abs(x).max()
+    return y if linear else y / (np.abs(y).max() + 1e-9) * np.abs(x).max()
 
 
-def mixed(block, music, rng, chain=None):
+def mixed(block, music, rng, room=None):
     """Known music added to a clean real window: a bed, cues, an intro or outro, or a quiet bed (-36 to -30 dB re
-    the speech, which the synthetic windows ignore). Tiles: 1 above -33 dB re the speech, 0 below -45 dB."""
+    the speech, which the synthetic windows ignore), dry or through the hall of seed room. Tiles: 1 where the music
+    is above -33 dB re the speech, 0 below -45 dB."""
     from scipy.signal import resample_poly
 
     scenario = rng.choice(["bed", "cues", "edge", "quiet"], p=[0.35, 0.25, 0.25, 0.15])
@@ -721,13 +736,16 @@ def mixed(block, music, rng, chain=None):
     M = np.stack([m, m]) if rng.random() < 0.5 else np.stack([m, rng.uniform(0.6, 1) * np.roll(m, int(rng.uniform(0.0003, 0.02) * 44100))])
     speech = np.mean(block[:, np.abs(block).max(0) > 0.05 * np.abs(block).max()] ** 2)
     M *= np.sqrt(speech) * 10 ** ((rng.uniform(-36, -30) if scenario == "quiet" else rng.uniform(-30, 6)) / 20)
-    x = block + M if chain is None else chain(block + M)
+    x = block + M if room is None else hall(block + M, room)
     peak = max(np.abs(x).max(), 1.0)
     spec = ref.stft(x / peak)
     features = ref.music_features(np.stack([spec[0].real, spec[0].imag, spec[1].real, spec[1].imag]).astype(np.float32))
+    # ponytail: tiles are labelled from the dry music, so in a hall the music's echo and reverberation after it ends
+    # counts as clean (the window's label is right). Labelling that tail as music or ignoring it trained no better
+    # detectors in five runs (docs/detector-v2-plan.md, section 16).
     power = np.mean(M**2, 0)
-    level = [10 * np.log10(power[max(0, 8 * j * 1024 - 2048) : (8 * j + 7) * 1024 + 2048].mean() / speech + 1e-20) for j in range(TILES)]
-    return features.astype(np.float16), np.where(np.array(level) > -33, 1, np.where(np.array(level) < -45, 0, -1)).astype(np.int8)
+    level = np.array([10 * np.log10(power[max(0, 8 * j * 1024 - 2048) : (8 * j + 7) * 1024 + 2048].mean() / speech + 1e-20) for j in range(TILES)])
+    return features.astype(np.float16), np.where(level > -33, 1, np.where(level < -45, 0, -1)).astype(np.int8)
 
 
 def mix_one(job):
@@ -742,10 +760,10 @@ def mix_one(job):
         for _ in range(6):
             pair = mixed(block, read(music[rng.integers(len(music))], N16, rng), rng)
             X.append(pair[0]), Y.append(pair[1])
-        spec = ref.stft(hall(block, rng))  # the same speech through a hall's loudspeakers: still no music
+        spec = ref.stft(hall(block, int(rng.integers(1 << 30))))  # the same speech through a hall's loudspeakers: still no music
         X.append(ref.music_features(np.stack([spec[0].real, spec[0].imag, spec[1].real, spec[1].imag]).astype(np.float32)).astype(np.float16))
         Y.append(np.zeros(TILES, np.int8))
-        pair = mixed(block, read(music[rng.integers(len(music))], N16, rng), rng, chain=lambda z: hall(z, rng))  # a nasheed over the PA
+        pair = mixed(block, read(music[rng.integers(len(music))], N16, rng), rng, room=int(rng.integers(1 << 30)))  # a nasheed over the PA
         X.append(pair[0]), Y.append(pair[1])
     if X:
         np.savez(out, x=np.stack(X), y=np.stack(Y))
@@ -754,7 +772,7 @@ def mix_one(job):
 def mix(data, labels, out):
     os.makedirs(out, exist_ok=True)
     eps = episodes()
-    jobs = [(data, p, os.path.join(out, os.path.basename(p)), i) for i, p in enumerate(sorted(glob.glob(f"{labels}/*.npz")))
+    jobs = [(data, p, os.path.join(out, os.path.basename(p)), zlib.crc32(os.path.basename(p).encode())) for p in sorted(glob.glob(f"{labels}/*.npz"))
             if eps.get(os.path.basename(p)[:-4], {}).get("split") == "train"]
     with Pool(max(1, os.cpu_count() - 1)) as pool:
         list(pool.imap_unordered(mix_one, jobs))
