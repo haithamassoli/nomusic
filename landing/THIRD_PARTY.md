@@ -26,5 +26,9 @@ Wilkins, Prem Seetharaman, Alison Wahl and Bryan Pardo, CC BY 4.0,
 https://doi.org/10.5281/zenodo.1442513, through the mirror
 https://huggingface.co/datasets/Bill13579/vocalset-mirror) and music from the
 FMA small set (the Free Music Archive's tracks under Creative Commons licenses
-chosen by their artists, https://github.com/mdeff/fma). It contains no audio
-from any of them.
+chosen by their artists, https://github.com/mdeff/fma), and on real
+recordings: podcasts of Thmanyah (https://thmanyah.com, from its YouTube
+channels, used with Thmanyah's permission; tools/detector-episodes.json lists
+them) and Friday sermons from the Sermon Audio and Text (SAT) dataset (CC BY
+4.0, https://doi.org/10.17632/fnz5bt24st.1). It contains no audio from any of
+them.

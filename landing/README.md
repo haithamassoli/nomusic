@@ -79,21 +79,27 @@ in YouTube's privacy-enhanced player. The link below opens the video on YouTube.
   44.1 kHz) and go through the same crossfades and export, so a file without
   music, or with music only in an intro, an outro or a few short cues, can
   finish in a fraction of the time. The detector
-  ([audio/engine/detector.onnx](audio/engine/detector.onnx), a 129K-parameter
-  convolutional network of 506 KiB that ships with the site) reads 48 mel
+  ([audio/engine/detector.onnx](audio/engine/detector.onnx), a 329K-parameter
+  convolutional network of 1.3 MB that ships with the site) reads 48 mel
   bands of the window's mid and side channels up to 8 kHz, computed from the
   spectrum the tool needs anyway, and scores every 0.19 s of the window; a
   score of 0 or more means music is likely, and the window is separated. It
-  and the check below add about
-  20 ms per window on an Apple M3, against 2.9 s for the model there, so a file
-  with music throughout takes about 0.7% longer. It is trained to find music
-  from about 30 dB below the speech up; [tools/detector.py](../tools/detector.py)
-  rebuilds it and its docstring describes the data, the labels and the threshold.
-- The threshold errs towards music: in evaluation (speakers and music not used
-  in training) it flagged every window with music, down to beds 36 dB under
-  the speech and 0.5 s cues, and also most windows of spoken-word recordings
-  without music, especially reverberant ones. Those take as long as before; clean, dry recordings gain
-  the most. The detector does not adapt its threshold to a file, since a
+  and the check below add about 30 ms per window on an Apple M3, against
+  2.9 s for the model there, so a file with music throughout takes about 1%
+  longer. It learned from synthetic mixes and from real podcasts and sermons,
+  where the model itself showed which windows it changes and an audio tagger
+  confirmed that what it changed was music;
+  [tools/detector.py](../tools/detector.py) rebuilds it and its docstring
+  describes the data, the labels and the threshold.
+- The threshold errs towards music. On podcast programmes kept out of
+  training it found every window with confirmed music (1,268 windows in 179
+  separate passages) and skipped 40% of the windows without music (the first
+  detector skipped 7%); in synthetic tests with speakers and music not used in
+  training it flagged every window with music, down to beds 36 dB under the
+  speech and 0.5 s cues. Very reverberant recordings, such as some Friday
+  sermons recorded in the mosque or lectures in a hall, are still mostly
+  separated and take as long as before; dry recordings gain the most. The
+  detector does not adapt its threshold to a file, since a
   window that looked like music in one part of a file says little about
   another. After the model separates a window, [audio/dsp.js](audio/dsp.js)
   measures what it removed (more than -40 dB of the window or -35 dB in any
