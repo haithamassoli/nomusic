@@ -405,8 +405,9 @@ def train(shards, labels, mixes, out, epochs=16, margin=1.0, seed=0):
 
 
 def evaluate(labels, detector_path, splits="dev,calib"):
-    """The gate as the worker runs it (separate when the score is >= 0, or after a window the model changed), on
-    the windows of each split whose previous window was labelled too (or that start a recording)."""
+    """The gate as the worker runs it (separate when the score is >= 0, or after a window the model changed). Clean
+    windows count only where the gate's decision is known: the score separates them, they start a recording, or
+    the carry from the window before is known (that window is known, or the model did not change it)."""
     import onnxruntime as ort
 
     session = ort.InferenceSession(detector_path, providers=["CPUExecutionProvider"])
@@ -418,8 +419,11 @@ def evaluate(labels, detector_path, splits="dev,calib"):
         separated, known = np.zeros(len(s), bool), np.zeros(len(s), bool)
         for i in sorted(range(len(s)), key=lambda i: (info["episode"][i], info["k"][i])):
             prev = at.get((info["episode"][i], int(info["k"][i]) - 1))
-            known[i] = prev is not None or info["k"][i] == 0
+            # Without the window before, or with one whose own carry is unknown and that the model changed, the
+            # browser may carry separation into this window: separated is then a lower bound.
+            carry_known = info["k"][i] == 0 or (prev is not None and (known[prev] or not changed[prev]))
             separated[i] = s[i] >= 0 or (prev is not None and separated[prev] and changed[prev])
+            known[i] = carry_known or s[i] >= 0
         must, clean = info["must"], info["clean"] & known
         events = sum(1 for i in np.flatnonzero(must) if (info["episode"][i], int(info["k"][i]) - 1) not in at or not must[at[(info["episode"][i], int(info["k"][i]) - 1)]])
         print(f"{split}: {len(s)} windows; music windows {must.sum()} ({events} events), missed {(must & ~separated).sum()}"
@@ -459,7 +463,9 @@ def fetch_real(data):
             zipfile.ZipFile(os.path.join(work, "sat.zip")).extractall(work)
             for d in glob.glob(f"{work}/*/audio dataset/sermon_*"):
                 files = sorted(glob.glob(f"{d}/*.wav"), key=lambda p: int(os.path.basename(p).split("_")[0]))
-                sf.write(f"{out}/sat_{d.rsplit('_', 1)[1]}.wav", np.concatenate([sf.read(f, dtype="float32")[0] for f in files]), 16000)
+                parts = [sf.read(f, dtype="float32") for f in files]
+                assert len({rate for _, rate in parts}) == 1, d  # one sample rate per sermon
+                sf.write(f"{out}/sat_{d.rsplit('_', 1)[1]}.wav", np.concatenate([x for x, _ in parts]), parts[0][1])
     panns = os.path.join(data, "panns")
     os.makedirs(panns, exist_ok=True)
     for name in (PANNS_SED, PANNS_CLIP):
@@ -687,6 +693,9 @@ def targets(c):
 def real(labels, split):
     """The labelled windows of a split: features, tile targets, and classes, recordings and positions."""
     eps = episodes()
+    missing = sorted(v for v, e in eps.items() if e["split"] == split and not os.path.exists(f"{labels}/{v}.judge.npz"))
+    if missing:  # a recording taken down, or not yet labelled or judged: the split's numbers leave it out
+        print(f"{split}: {len(missing)} recordings not labelled and judged: {', '.join(missing)}", file=sys.stderr)
     xs, ys, info = [], [], {k: [] for k in ["changed", "clean", "must", "possible", "teacher_only", "episode", "programme", "k"]}
     for path in sorted(glob.glob(f"{labels}/*.npz")):
         vid = os.path.basename(path)[:-4]
@@ -742,7 +751,7 @@ def mixed(block, music, rng, room=None):
     features = ref.music_features(np.stack([spec[0].real, spec[0].imag, spec[1].real, spec[1].imag]).astype(np.float32))
     # ponytail: tiles are labelled from the dry music, so in a hall the music's echo and reverberation after it ends
     # counts as clean (the window's label is right). Labelling that tail as music or ignoring it trained no better
-    # detectors in five runs (docs/detector-v2-plan.md, section 16).
+    # detectors in five runs.
     power = np.mean(M**2, 0)
     level = np.array([10 * np.log10(power[max(0, 8 * j * 1024 - 2048) : (8 * j + 7) * 1024 + 2048].mean() / speech + 1e-20) for j in range(TILES)])
     return features.astype(np.float16), np.where(level > -33, 1, np.where(level < -45, 0, -1)).astype(np.int8)

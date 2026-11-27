@@ -92,11 +92,14 @@ in YouTube's privacy-enhanced player. The link below opens the video on YouTube.
   [tools/detector.py](../tools/detector.py) rebuilds it and its docstring
   describes the data, the labels and the threshold.
 - The threshold errs towards music. On podcast programmes kept out of
-  training it found every window with confirmed music (1,268 windows in 179
-  separate passages) and skipped 40% of the windows without music (the first
-  detector skipped 7%); in synthetic tests with speakers and music not used in
-  training it flagged every window with music, down to beds 36 dB under the
-  speech and 0.5 s cues. In held-out sermons of the SAT dataset it skipped 90%
+  training (some of them chose the recipe or set the threshold, so only the
+  test programmes were scored blind) it found every window with confirmed music
+  (1,268 windows in 179 separate passages) and skipped 40% of the windows
+  without music (the first detector skipped 7%); in synthetic tests with
+  speech recordings and music tracks not used in training (singers and
+  speakers can recur) it flagged every window with music, down to beds 36 dB
+  under the speech and 0.5 s cues. In sermons of the SAT dataset kept out of
+  training, though looked at while choosing the recipe, it skipped 90%
   of the windows without music, but very reverberant recordings, such as some
   Friday sermons recorded in the mosque or a lecture in a hall, are still
   mostly separated and take as long as before; dry recordings gain the most.

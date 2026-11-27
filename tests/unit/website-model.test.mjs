@@ -36,6 +36,16 @@ test('the detector is dropped for the run once it fails or returns anything but 
   assert.equal(await (await createModel(new Uint8Array())).score(), Infinity, 'a detector that fails to load');
 });
 
+test('a detector that never finishes loading is dropped after a minute', async t => {
+  t.mock.method(console, 'error', () => {});
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  globalThis.sessions = [separator, () => new Promise(() => {})];
+  const pending = createModel(new Uint8Array());
+  await new Promise(resolve => setImmediate(resolve));
+  t.mock.timers.tick(60_000);
+  assert.equal(await (await pending).score(), Infinity);
+});
+
 test('errors of the separation model are not caught', async () => {
   globalThis.sessions = [() => ({ run: async () => { throw new Error('separator failed'); } }), detector(scores(1))];
   const model = await createModel(new Uint8Array());

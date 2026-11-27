@@ -343,14 +343,15 @@ try {
   console.log('PASS only the windows with music use the model; a file without music says so');
 
   // The retention fixtures through the browser, keeping the audio it encodes.
-  // Firefox has no native AAC encoder to observe, so only the reference runs there.
+  // Firefox has no native AAC encoder to observe, so only the reference runs there
+  // (and an earlier Chrome run's capture must not stand in for it).
+  for (const name of retained) rmSync(join(work, `retain-${name}.browser.f32`), { force: true });
   if (!firefox) {
     await mode({ capturePcm: true });
     for (const name of retained) {
       assert.equal((await choose(`retain-${name}.m4a`)).state, 'ready');
       await submit();
       const path = join(work, `retain-${name}.browser.f32`);
-      rmSync(path, { force: true });
       await page.evaluate(name => {
         const link = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([window.testPcm])), download: name });
         document.body.append(link); link.click(); link.remove();

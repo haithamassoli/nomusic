@@ -17,17 +17,23 @@ export const SHAPE = [1, 4, 513, 2049];
 // the scores (tools/detector.py): music is likely where a score is >= 0.
 const DETECTOR_SHAPE = [1, 2, 513, 48];
 const TILES = 64;
+const DETECTOR_TIMEOUT_MS = 60_000; // 1.3 MB, after the 47 MB model already arrived
 const options = { executionProviders: ['wasm'], graphOptimizationLevel: 'all' };
 
 // bytes: the verified model file. Resolves to { run(spectrum) -> Float32Array,
 // score(features) -> the window's highest detector score }. The detector only
 // saves time: if it doesn't load, fails or returns anything but 64 finite
-// scores, it is dropped for the run and every window scores Infinity, so the
+// scores, or takes over a minute to load, it is dropped for the run and every window scores Infinity, so the
 // model separates it. Errors of the separation model itself are not caught.
 export async function createModel(bytes) {
   const session = await ort.InferenceSession.create(bytes, options);
-  let detector = await ort.InferenceSession.create(new URL('./detector.onnx', import.meta.url).href, options)
-    .catch(error => { console.error('Musicless audio: music detector unavailable', error); return null; });
+  // A detector download that stalls must not hold up the run either.
+  let timer;
+  let detector = await Promise.race([
+    ort.InferenceSession.create(new URL('./detector.onnx', import.meta.url).href, options),
+    new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('detector load timed out')), DETECTOR_TIMEOUT_MS); }),
+  ]).catch(error => { console.error('Musicless audio: music detector unavailable', error); return null; })
+    .finally(() => clearTimeout(timer));
   return {
     async run(spectrum) {
       const { y } = await session.run({ x: new ort.Tensor('float32', spectrum, SHAPE) });
